@@ -91,7 +91,7 @@ function textos() {
 }
 
 function fotos() {
-  $$('[data-revela-foto]').forEach((m) => {
+  $$('[data-revela-foto]').forEach((m, i) => {
     const img = m.querySelector('img, video');
     if (reduzido) {
       gsap.from(m, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: m, start: 'top 85%' } });
@@ -100,6 +100,11 @@ function fotos() {
     gsap.fromTo(m, { clipPath: 'inset(18% 10% 18% 10% round 4px)' }, {
       clipPath: 'inset(0% 0% 0% 0% round 4px)', ease: 'none',
       scrollTrigger: { trigger: m, start: 'top 95%', end: 'top 35%', scrub: 0.6 },
+    });
+    // A foto "pousa" girando de leve até ficar reta.
+    gsap.fromTo(m.parentElement, { rotate: i % 2 ? 4 : -4, y: 40 }, {
+      rotate: 0, y: 0, ease: 'none',
+      scrollTrigger: { trigger: m, start: 'top 100%', end: 'top 40%', scrub: 0.6 },
     });
     if (img) {
       gsap.fromTo(img, { scale: 1.25, yPercent: -6 }, {
@@ -119,7 +124,11 @@ function conversas() {
       gsap.from(msgs, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: c, start: 'top 85%' } });
       return;
     }
-    gsap.set(msgs, { opacity: 0, y: 12, scale: 0.96 });
+    // Cada balão chega do lado de quem mandou.
+    msgs.forEach((m) => {
+      const ela = m.classList.contains('msg--ela');
+      gsap.set(m, { opacity: 0, y: 14, x: ela ? -24 : 24, scale: 0.9, transformOrigin: ela ? '0% 100%' : '100% 100%' });
+    });
     ScrollTrigger.create({
       trigger: c, start: 'top 82%', once: true,
       onEnter: () => {
@@ -129,7 +138,7 @@ function conversas() {
           tl.add(() => m.before(dig), i ? '+=0.05' : 0)
             .fromTo(dig, { opacity: 0 }, { opacity: 1, duration: 0.15 })
             .to(dig, { opacity: 0, duration: 0.1, delay: Math.min(0.55, 0.2 + m.textContent.length * 0.006), onComplete: () => dig.remove() })
-            .to(m, { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: 'power3.out' });
+            .to(m, { opacity: 1, y: 0, x: 0, scale: 1, duration: 0.35, ease: 'power3.out' });
         });
       },
     });
@@ -157,19 +166,22 @@ function memoria() {
 }
 
 function story() {
-  $$('[data-story]').forEach((palco) => {
-    const resp = palco.querySelector('[data-story-resposta]');
-    const dig = resp && resp.querySelector('.story-resposta__digitando');
-    const msg = resp && resp.querySelector('.msg');
-    if (reduzido || !resp) return;
-    gsap.set(msg, { opacity: 0, y: 20, scale: 0.9 });
-    gsap.set(dig, { opacity: 0 });
-    gsap.timeline({ scrollTrigger: { trigger: palco, start: 'top top', end: '+=120%', pin: true, scrub: 0.6 } })
-      .fromTo(palco.querySelector('.story-moldura'), { scale: 0.86 }, { scale: 1, duration: 1 })
-      .to(dig, { opacity: 1, duration: 0.3 }, 0.6)
-      .to(dig, { opacity: 0, duration: 0.2 }, 1.2)
-      .to(msg, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: 'expo.out' }, 1.3)
-      .to({}, { duration: 0.6 });
+  $$('[data-story]').forEach((bloco) => {
+    const img = bloco.querySelector('[data-story-img]');
+    const citacao = bloco.querySelector('.resposta-story');
+    if (reduzido) {
+      gsap.from([img, citacao], { opacity: 0, duration: 0.15, scrollTrigger: { trigger: bloco, start: 'top 80%' } });
+      return;
+    }
+    // O story chega inteiro e nítido: só cresce um pouco ao entrar.
+    gsap.fromTo(img, { scale: 0.9, opacity: 0.4 }, {
+      scale: 1, opacity: 1, ease: 'none',
+      scrollTrigger: { trigger: img, start: 'top 95%', end: 'top 45%', scrub: 0.6 },
+    });
+    if (citacao) {
+      gsap.from(citacao, { opacity: 0, y: 8, duration: 0.3, ease: 'power3.out',
+        scrollTrigger: { trigger: citacao, start: 'top 82%' } });
+    }
   });
 }
 
@@ -237,12 +249,15 @@ function adesivo() {
 function placar() {
   $$('[data-placar]').forEach((p) => {
     const fitas = $$('[data-placar-fita]', p);
-    if (reduzido) { gsap.set(fitas, { yPercent: -500 / 6 }); return; }
-    fitas.forEach((f, i) => {
-      gsap.fromTo(f, { yPercent: 0 }, {
-        yPercent: -500 / 6, ease: 'none',
-        scrollTrigger: { trigger: p, start: 'top 85%', end: `top ${30 - i * 8}%`, scrub: 0.4 },
-      });
+    // O último número de cada fita é o gol real: termina sempre parado nele.
+    const fim = (f) => -100 * (f.children.length - 1) / f.children.length;
+    if (reduzido) { fitas.forEach((f) => gsap.set(f, { yPercent: fim(f) })); return; }
+    fitas.forEach((f) => gsap.set(f, { yPercent: 0 }));
+    ScrollTrigger.create({
+      trigger: p, start: 'top 75%', once: true,
+      onEnter: () => fitas.forEach((f, i) => gsap.to(f, {
+        yPercent: fim(f), duration: 1.4 + i * 0.35, ease: 'power3.out',
+      })),
     });
   });
 }
@@ -450,8 +465,72 @@ function progresso(barra) {
   });
 }
 
+// Número grande vazado do capítulo sobe mais devagar que o resto (parallax),
+// e a linha ao lado do "Capítulo N" se desenha conforme a rolagem.
+function cabecas() {
+  $$('[data-cap-numero]').forEach((n) => {
+    if (reduzido) return;
+    gsap.fromTo(n, { yPercent: 40, opacity: 0 }, {
+      yPercent: -40, opacity: 1, ease: 'none',
+      scrollTrigger: { trigger: n.parentElement, start: 'top bottom', end: 'bottom top', scrub: true },
+    });
+  });
+  $$('[data-cap-linha]').forEach((l) => {
+    if (reduzido) { gsap.set(l, { scaleX: 1 }); return; }
+    gsap.fromTo(l, { scaleX: 0 }, {
+      scaleX: 1, ease: 'none',
+      scrollTrigger: { trigger: l, start: 'top 90%', end: 'top 55%', scrub: 0.6 },
+    });
+  });
+}
+
+// Faixas de frases: correm de lado com a rolagem, uma pra cada direção.
+function faixas() {
+  $$('[data-faixa]').forEach((f, i) => {
+    const trilho = f.querySelector('[data-faixa-trilho]');
+    if (reduzido) return;
+    const ida = i % 2 === 0;
+    gsap.fromTo(trilho, { xPercent: ida ? 0 : -33.333 }, {
+      xPercent: ida ? -33.333 : 0, ease: 'none',
+      scrollTrigger: { trigger: f, start: 'top bottom', end: 'bottom top', scrub: 0.4 },
+    });
+    gsap.fromTo(f, { rotate: ida ? -3 : 3 }, {
+      rotate: ida ? 2 : -2, ease: 'none',
+      scrollTrigger: { trigger: f, start: 'top bottom', end: 'bottom top', scrub: true },
+    });
+  });
+}
+
+// "Eu amo…": a tela fica presa e cada coisa entra por baixo empurrando a anterior.
+function amo() {
+  $$('[data-amo]').forEach((palco) => {
+    const itens = $$('.amo__item', palco);
+    const n = palco.querySelector('[data-amo-n]');
+    if (reduzido || !itens.length) { palco.classList.add('amo-palco--lista'); return; }
+    gsap.set(itens, { yPercent: 110, opacity: 0 });
+    gsap.set(itens[0], { yPercent: 0, opacity: 1 });
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: palco, start: 'top top', end: `+=${itens.length * 55}%`, pin: true, scrub: 0.5,
+        onUpdate: (st) => { n.textContent = String(Math.min(itens.length, 1 + Math.floor(st.progress * itens.length))); },
+      },
+    });
+    itens.forEach((it, i) => {
+      if (!i) return;
+      // Sai uma, entra a outra (sem as duas na tela ao mesmo tempo), e segura um pouco.
+      tl.to(itens[i - 1], { yPercent: -110, opacity: 0, duration: 0.6, ease: 'power2.in' })
+        .fromTo(it, { yPercent: 110, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.6, ease: 'power2.out' })
+        .to({}, { duration: 0.5 });
+    });
+    tl.to({}, { duration: 0.8 });
+  });
+}
+
 export function iniciarEfeitos({ barra, abaixar }) {
   fundo();
+  cabecas();
+  faixas();
+  amo();
   titulos();
   textos();
   memoria();
@@ -477,6 +556,20 @@ export function iniciarEfeitos({ barra, abaixar }) {
   ScrollTrigger.sort();
   ScrollTrigger.refresh();
   document.fonts.ready.then(() => ScrollTrigger.refresh());
+
+  // Se qualquer coisa mudar a altura da história depois (foto, fonte, vídeo),
+  // recalcula todas as posições, senão textos podem ficar sem aparecer.
+  const historia = document.getElementById('historia');
+  let altura = historia.offsetHeight;
+  let espera;
+  new ResizeObserver(() => {
+    const nova = historia.offsetHeight;
+    if (Math.abs(nova - altura) < 2) return;
+    altura = nova;
+    clearTimeout(espera);
+    espera = setTimeout(() => ScrollTrigger.refresh(), 200);
+  }).observe(historia);
+  window.addEventListener('load', () => ScrollTrigger.refresh(), { once: true });
 }
 
 export const atualizar = () => ScrollTrigger.refresh();

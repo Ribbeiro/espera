@@ -38,22 +38,34 @@ const quem = (de) => (de === 'ela' ? 'você' : 'eu');
 
 /* ---------- peças reutilizáveis ---------- */
 
-function mensagem(m, extra = '') {
+function mensagem(m, extra = '', comHora = true) {
+  const hora = comHora && m.quando && h('span', { class: 'msg__hora' }, m.quando);
   if (m.tipo === 'sistema') {
     return h('div', { class: `msg msg--sistema ${extra}` },
       h('span', { class: 'msg__ligacao' }, svg('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 3 16.5zM15 10.5l6-3.5v10l-6-3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')),
       h('p', { class: 'msg__texto' }, m.texto),
-      m.quando && h('span', { class: 'msg__hora' }, m.quando));
+      hora);
   }
   return h('div', { class: `msg msg--${m.de} ${extra}` },
     h('span', { class: 'sr' }, quem(m.de) + ': '),
     h('p', { class: 'msg__texto' }, m.texto),
-    m.quando && h('span', { class: 'msg__hora' }, m.quando));
+    hora);
 }
 
+// Mensagens seguidas da mesma pessoa viram um grupo, como no Insta/Zap:
+// cantos "colados" e horário só quando o grupo acaba ou o minuto muda.
 export function conversa(lista = [], extra = '') {
-  if (!lista.length) return null;
-  return h('div', { class: `conversa ${extra}`, 'data-conversa': '' }, lista.map((m) => mensagem(m)));
+  const msgs = lista.filter(Boolean);
+  if (!msgs.length) return null;
+  const autor = (m) => (m.tipo === 'sistema' ? 'sistema' : m.de);
+  return h('div', { class: `conversa ${extra}`, 'data-conversa': '' }, msgs.map((m, i) => {
+    const ant = msgs[i - 1];
+    const prox = msgs[i + 1];
+    const ini = !ant || autor(ant) !== autor(m);
+    const fim = !prox || autor(prox) !== autor(m);
+    const cls = [ini && 'msg--ini', fim && 'msg--fim', m.destaque && 'msg--grande'].filter(Boolean).join(' ');
+    return mensagem(m, cls, fim || prox.quando !== m.quando);
+  }));
 }
 
 function manuscrito(q, nota) {
@@ -80,8 +92,11 @@ export function foto(f, extra = '') {
 }
 
 function cabeca(s) {
+  // Número grande vazado atrás do título (só nos capítulos numerados).
+  const num = (s.rotulo || '').match(/\d+/);
   return h('header', { class: 'cap-cabeca' },
-    h('p', { class: 'cap-rotulo' }, s.rotulo),
+    num && h('span', { class: 'cap-numero', 'data-cap-numero': '', 'aria-hidden': 'true' }, num[0].padStart(2, '0')),
+    h('p', { class: 'cap-rotulo' }, s.rotulo, h('span', { class: 'cap-linha', 'data-cap-linha': '', 'aria-hidden': 'true' })),
     h('h2', { class: 'cap-titulo', 'data-split': '' }, s.titulo),
     s.data && h('p', { class: 'cap-data' }, s.data));
 }
@@ -99,19 +114,23 @@ const momentos = {
     ];
   },
 
+  // O story e o Direct lado a lado (empilhados no celular): a resposta dela
+  // aparece "colada" numa miniatura do story, como no Instagram.
   story(s) {
-    const destaque = s.mensagens.find((m) => m.destaque);
-    const resto = s.mensagens.filter((m) => !m.destaque);
+    const st = s.story;
     return [
       paragrafos(s.texto),
-      h('div', { class: 'story-palco', 'data-story': '' },
-        h('div', { class: 'story-tela' },
-          h('div', { class: 'story-moldura', style: proporcao(s.story.m) },
-            h('img', { 'data-lazy': '', midia: s.story.m, alt: s.story.legenda, decoding: 'async' })),
-          destaque && h('div', { class: 'story-resposta', 'data-story-resposta': '' },
-            h('span', { class: 'story-resposta__digitando', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
-            mensagem(destaque, 'msg--grande')))),
-      conversa(resto),
+      h('div', { class: 'story-dm', 'data-story': '' },
+        h('figure', { class: 'story-dm__story' },
+          h('div', { class: 'story-moldura', style: proporcao(st.m), 'data-story-img': '' },
+            h('img', { 'data-lazy': '', midia: st.m, alt: st.legenda, decoding: 'async' })),
+          h('figcaption', { class: 'foto__legenda' }, st.legenda)),
+        h('div', { class: 'story-dm__chat' },
+          st.chat && h('p', { class: 'story-dm__topo' }, st.chat),
+          st.resposta && h('div', { class: 'resposta-story', 'aria-hidden': 'true' },
+            h('img', { class: 'resposta-story__mini', 'data-lazy': '', midia: st.m, alt: '', decoding: 'async' }),
+            h('span', {}, st.resposta)),
+          conversa(s.mensagens))),
       (s.blocos || []).map((b) => h('div', { class: 'bloco' }, paragrafos([b.texto]), conversa(b.mensagens))),
     ];
   },
@@ -144,13 +163,16 @@ const momentos = {
   },
 
   placar(s) {
-    const rolo = () => h('span', { class: 'placar__rolo', 'aria-hidden': 'true' },
-      h('span', { class: 'placar__fita', 'data-placar-fita': '' }, ['0', '1', '2', '3', '4', '?'].map((d) => h('span', {}, d))));
+    // Cada rolo gira pelos números como um placar eletrônico e para no gol real.
+    const p = s.placar;
+    const rolo = (gols) => h('span', { class: 'placar__rolo', 'aria-hidden': 'true' },
+      h('span', { class: 'placar__fita', 'data-placar-fita': '' },
+        ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', String(gols)].map((d) => h('span', {}, d))));
     return [
       paragrafos(s.texto),
-      h('div', { class: 'placar', 'data-placar': '', role: 'img', 'aria-label': `${s.placar.casa}, placar desconhecido, ${s.placar.fora}` },
-        h('div', { class: 'placar__linha' }, h('span', { class: 'placar__time' }, s.placar.casa), rolo()),
-        h('div', { class: 'placar__linha' }, h('span', { class: 'placar__time' }, s.placar.fora), rolo())),
+      h('div', { class: 'placar', 'data-placar': '', role: 'img', 'aria-label': `${p.casa} ${p.gols_casa} a ${p.gols_fora} ${p.fora}` },
+        h('div', { class: 'placar__linha' }, h('span', { class: 'placar__time' }, p.casa), rolo(p.gols_casa)),
+        h('div', { class: 'placar__linha' }, h('span', { class: 'placar__time' }, p.fora), rolo(p.gols_fora))),
       h('p', { class: 'placar__legenda', 'data-revela-texto': '' }, s.placar.legenda),
       conversa(s.mensagens),
     ];
@@ -184,8 +206,9 @@ const momentos = {
       it.data && h('p', { class: 'galeria__data' }, it.data),
       it.arquivo && h('div', { class: 'foto__moldura', style: proporcao(it.m) },
         h('img', { 'data-lazy': '', 'data-lazy-grupo': 'galeria', midia: it.m, alt: it.legenda || '', decoding: 'async' })),
-      it.legenda && h('p', { class: 'galeria__legenda' }, it.legenda),
-      conversa(it.mensagens));
+      !it.legenda_depois && it.legenda && h('p', { class: 'galeria__legenda' }, it.legenda),
+      conversa(it.mensagens),
+      it.legenda_depois && it.legenda && h('p', { class: 'galeria__legenda' }, it.legenda));
     const mu = s.muito;
     return [
       paragrafos(s.texto),
@@ -213,6 +236,7 @@ const momentos = {
       h('div', { class: 'painel', 'data-painel': '' },
         linha('de', s.painel.de), linha('para', s.painel.para), linha('quando', s.painel.quando)),
       conversa(s.mensagens),
+      s.fecho_mensagens && h('div', { class: 'bloco' }, paragrafos([s.fecho_texto]), conversa(s.fecho_mensagens)),
     ];
   },
 
@@ -279,8 +303,29 @@ const secoes = {
   capitulo(s) {
     const corpo = (momentos[s.momento] || momentos.memoria)(s);
     return h('section', { class: `secao capitulo momento--${s.momento}`, 'data-tema': s.tema, 'data-seg': s.rotulo },
-      s.abre && conversa([s.abre], 'conversa--ponte'),
-      cabeca(s), corpo);
+      cabeca(s),
+      s.abre && h('div', { class: 'bloco bloco--abre' }, s.abre_texto && paragrafos([s.abre_texto]), conversa([s.abre])),
+      corpo);
+  },
+
+  // Faixa de frases reais que corre de lado conforme a rolagem.
+  faixa(s) {
+    const linha = () => h('span', { class: 'faixa__linha' },
+      s.linhas.map((t) => [h('span', { class: 'faixa__frase' }, t), h('span', { class: 'faixa__ponto', 'aria-hidden': 'true' })]));
+    return h('section', { class: 'faixa', 'data-faixa': '', 'aria-label': s.linhas.join(' · ') },
+      h('div', { class: 'faixa__trilho', 'data-faixa-trilho': '', 'aria-hidden': 'true' }, linha(), linha(), linha()));
+  },
+
+  // "Eu amo…" com as coisas trocando uma por uma, presa na tela.
+  amo(s) {
+    return h('section', { class: 'secao interludio amo', 'data-tema': s.tema },
+      h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
+      h('div', { class: 'amo-palco', 'data-amo': '' },
+        h('p', { class: 'amo__prefixo' }, s.prefixo),
+        h('ul', { class: 'amo__lista', 'data-amo-lista': '' }, s.itens.map((t) => h('li', { class: 'amo__item' }, t))),
+        h('p', { class: 'amo__contador', 'aria-hidden': 'true' },
+          h('span', { 'data-amo-n': '' }, '1'), ` de ${s.itens.length}`)),
+      h('p', { class: 'amo__fecho manuscrito-curto', 'data-revela-texto': '' }, s.fecho));
   },
 
   ponto(s) {
@@ -298,7 +343,11 @@ const secoes = {
   'ela-diz'(s) {
     return h('section', { class: 'secao interludio ela-diz', 'data-tema': s.tema },
       h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
-      h('div', { class: 'ela-diz__lista', 'data-ela-diz': '' }, s.mensagens.map((m) => mensagem(m))),
+      h('div', { class: 'ela-diz__lista', 'data-ela-diz': '' }, s.mensagens.map((m) => mensagem(m, 'msg--ini msg--fim'))),
+      s.ele_mensagens && s.ele_mensagens.length && [
+        h('h3', { class: 'ela-diz__subtitulo', 'data-split': '' }, s.ele_titulo),
+        h('div', { class: 'ela-diz__lista ela-diz__lista--ele', 'data-ela-diz': '' }, s.ele_mensagens.map((m) => mensagem(m, 'msg--ini msg--fim'))),
+      ],
       h('p', { class: 'ela-diz__fecho manuscrito-curto', 'data-revela-texto': '' }, s.fecho));
   },
 
