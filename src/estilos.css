@@ -765,3 +765,12 @@ html.travado, html.travado body { overflow: hidden; }
 /* O "pin-spacer" que o GSAP cria em volta das telas presas não pode herdar a
    largura de coluna dos filhos da seção (senão a tela presa desalinha em tela larga). */
 .secao > .pin-spacer { max-width: none !important; }
+
+/* "digitando…" por cima do lugar do balão: não empurra a página. */
+.conversa { position: relative; }
+.digitando--flutua { position: absolute; }
+.digitando--flutua.digitando--ela { left: 0; }
+.digitando--flutua.digitando--ele { right: 0; }
+
+/* Camadas próprias pro que se mexe o tempo todo com a rolagem. */
+.celular__lista, .faixa__trilho, .galeria__trilho, .cap-numero, .bokeh i { will-change: transform; }

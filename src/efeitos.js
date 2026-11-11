@@ -147,7 +147,7 @@ function conversas() {
         const tl = gsap.timeline();
         msgs.forEach((m, i) => {
           const dig = digitando(m);
-          tl.add(() => m.before(dig), i ? '+=0.05' : 0)
+          tl.add(() => { dig.style.top = `${m.offsetTop}px`; c.append(dig); }, i ? '+=0.05' : 0)
             .fromTo(dig, { opacity: 0 }, { opacity: 1, duration: 0.15 })
             .to(dig, { opacity: 0, duration: 0.1, delay: Math.min(0.55, 0.2 + m.textContent.length * 0.006), onComplete: () => dig.remove() })
             .to(m, { opacity: 1, y: 0, x: 0, scale: 1, duration: 0.35, ease: 'power3.out' });
@@ -159,7 +159,7 @@ function conversas() {
 
 function digitando(msg) {
   const d = document.createElement('div');
-  d.className = 'digitando ' + (msg.classList.contains('msg--ela') ? 'digitando--ela' : 'digitando--ele');
+  d.className = 'digitando digitando--flutua ' + (msg.classList.contains('msg--ela') ? 'digitando--ela' : 'digitando--ele');
   d.setAttribute('aria-hidden', 'true');
   d.innerHTML = '<i></i><i></i><i></i>';
   return d;
@@ -704,15 +704,23 @@ export function iniciarEfeitos({ barra, abaixar, trilha }) {
   // recalcula todas as posições, senão textos podem ficar sem aparecer.
   const historia = document.getElementById('historia');
   let altura = historia.offsetHeight;
+  let pendente = false;
+  let ultimaRolagem = 0;
   let espera;
-  new ResizeObserver(() => {
-    const nova = historia.offsetHeight;
-    if (Math.abs(nova - altura) < 2) return;
-    altura = nova;
+  ScrollTrigger.addEventListener('refresh', () => { altura = historia.offsetHeight; pendente = false; });
+  window.addEventListener('scroll', () => { ultimaRolagem = performance.now(); }, { passive: true });
+  const quandoParar = () => {
     clearTimeout(espera);
-    espera = setTimeout(() => ScrollTrigger.refresh(), 200);
+    const falta = 700 - (performance.now() - ultimaRolagem);
+    if (falta > 0) { espera = setTimeout(quandoParar, falta); return; }
+    if (pendente) ScrollTrigger.refresh();
+  };
+  new ResizeObserver(() => {
+    if (Math.abs(historia.offsetHeight - altura) < 2) return;
+    pendente = true;
+    quandoParar();
   }).observe(historia);
-  window.addEventListener('load', () => ScrollTrigger.refresh(), { once: true });
+  window.addEventListener('load', () => { pendente = true; quandoParar(); }, { once: true });
 }
 
 export const atualizar = () => ScrollTrigger.refresh();

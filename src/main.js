@@ -4,7 +4,7 @@ import { entrarComSenha, entrarComSessao, urlDaMidia } from './cripto.js';
 import { montarSite, montarSegredo, h, icone } from './render.js';
 import * as audio from './audio.js';
 import {
-  iniciarRolagem, animarAbertura, iniciarEfeitos, definirIconeSom, pararRolagem, voltarRolagem, reduzido, atualizar,
+  iniciarRolagem, animarAbertura, iniciarEfeitos, definirIconeSom, pararRolagem, voltarRolagem, reduzido,
 } from './efeitos.js';
 
 const cadeado = document.getElementById('cadeado');
@@ -115,7 +115,6 @@ function carregarMidiaPreguicosa() {
       if (!url) return;
       el.src = url;
       el.classList.add('pronto');
-      if (el.tagName === 'IMG') el.addEventListener('load', () => atualizar(), { once: true });
     }).catch(() => el.classList.add('falhou'));
   };
   const io = new IntersectionObserver((entradas) => {
