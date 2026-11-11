@@ -36,6 +36,9 @@ export const icone = (nome, cls) => svg(ICONES[nome], cls);
 
 const quem = (de) => (de === 'ela' ? 'você' : 'eu');
 
+// Textos de interface, lidos do JSON (config.ui).
+let UI = {};
+
 /* ---------- peças reutilizáveis ---------- */
 
 function mensagem(m, extra = '', comHora = true) {
@@ -63,7 +66,7 @@ export function conversa(lista = [], extra = '') {
     const prox = msgs[i + 1];
     const ini = !ant || autor(ant) !== autor(m);
     const fim = !prox || autor(prox) !== autor(m);
-    const cls = [ini && 'msg--ini', fim && 'msg--fim', m.destaque && 'msg--grande'].filter(Boolean).join(' ');
+    const cls = [ini && 'msg--ini', fim && 'msg--fim', m.destaque && 'msg--grande', m.explode && 'msg--explode'].filter(Boolean).join(' ');
     return mensagem(m, cls, fim || prox.quando !== m.quando);
   }));
 }
@@ -91,6 +94,35 @@ export function foto(f, extra = '') {
     f.legenda && h('figcaption', { class: 'foto__legenda' }, f.legenda));
 }
 
+// Conversa "revivida": um celular estilizado onde as mensagens chegam com a rolagem.
+function celular(c, { antes, trilha } = {}) {
+  if (!c) return null;
+  const explode = c.mensagens.find((m) => m.explode);
+  return h('div', { class: 'celular-palco', 'data-celular': '', 'data-trilha': trilha },
+    h('div', { class: 'celular' },
+      h('div', { class: 'celular__topo' },
+        h('span', { class: 'celular__avatar', 'aria-hidden': 'true' }, [...c.nome][0]),
+        h('div', { class: 'celular__quem' },
+          h('p', { class: 'celular__nome' }, c.nome),
+          h('p', { class: 'celular__status' },
+            h('span', { 'data-celular-data': '' }, c.quando),
+            h('span', { class: 'celular__digitando', 'data-celular-digitando': '', 'aria-hidden': 'true' }, UI.digitando)))),
+      h('div', { class: 'celular__tela', 'data-celular-tela': '' },
+        h('div', { class: 'celular__lista', 'data-celular-lista': '' }, antes, conversa(c.mensagens, 'conversa--celular'))),
+      h('div', { class: 'celular__barra', 'aria-hidden': 'true' }, h('span'), h('i'))),
+    explode && h('p', { class: 'celular__explode', 'data-celular-explode': '', 'aria-hidden': 'true' }, explode.texto),
+    c.fecho && h('p', { class: 'celular__fecho manuscrito-curto', 'data-celular-fecho': '' }, c.fecho));
+}
+
+function fotoOuReserva(f, extra = '') {
+  if (!f) return null;
+  if (f.m) return foto(f, extra);
+  return h('figure', { class: `foto ${extra} foto--reserva`, 'data-revela-texto': '' },
+    h('div', { class: 'reserva', style: 'aspect-ratio:4/5' },
+      svg('<circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1"/><path d="M10 6.2l2-2.4 2 2.4-2 1.2z" fill="none" stroke="currentColor" stroke-width="1"/>', 'reserva__anel'),
+      h('p', {}, f.placeholder)));
+}
+
 function cabeca(s) {
   // Número grande vazado atrás do título (só nos capítulos numerados).
   const num = (s.rotulo || '').match(/\d+/);
@@ -109,15 +141,18 @@ const momentos = {
       h('p', { class: 'memoria', 'data-memoria': '' }, s.memoria),
       paragrafos(s.texto),
       manuscrito(s.manuscrito, s.manuscrito_nota),
+      s.antes_mensagens && paragrafos([s.antes_mensagens]),
       conversa(s.mensagens),
       h('div', { class: 'dupla' }, (s.fotos || []).map((f, i) => foto(f, i ? 'foto--desce' : ''))),
     ];
   },
 
-  // O story e o Direct lado a lado (empilhados no celular): a resposta dela
-  // aparece "colada" numa miniatura do story, como no Instagram.
+  // O story e, ao lado (embaixo no celular), a conversa do Direct revivida.
   story(s) {
     const st = s.story;
+    const resposta = st.resposta && h('div', { class: 'resposta-story', 'aria-hidden': 'true' },
+      h('img', { class: 'resposta-story__mini', 'data-lazy': '', midia: st.m, alt: '', decoding: 'async' }),
+      h('span', {}, st.resposta));
     return [
       paragrafos(s.texto),
       h('div', { class: 'story-dm', 'data-story': '' },
@@ -125,12 +160,7 @@ const momentos = {
           h('div', { class: 'story-moldura', style: proporcao(st.m), 'data-story-img': '' },
             h('img', { 'data-lazy': '', midia: st.m, alt: st.legenda, decoding: 'async' })),
           h('figcaption', { class: 'foto__legenda' }, st.legenda)),
-        h('div', { class: 'story-dm__chat' },
-          st.chat && h('p', { class: 'story-dm__topo' }, st.chat),
-          st.resposta && h('div', { class: 'resposta-story', 'aria-hidden': 'true' },
-            h('img', { class: 'resposta-story__mini', 'data-lazy': '', midia: st.m, alt: '', decoding: 'async' }),
-            h('span', {}, st.resposta)),
-          conversa(s.mensagens))),
+        celular(s.celular, { antes: resposta })),
       (s.blocos || []).map((b) => h('div', { class: 'bloco' }, paragrafos([b.texto]), conversa(b.mensagens))),
     ];
   },
@@ -146,8 +176,8 @@ const momentos = {
         h('p', { class: 'beijo-legenda manuscrito-curto' }, s.video.legenda),
         h('button', { class: 'icone-botao icone-botao--video', type: 'button', 'data-som-video': '', 'aria-label': 'Ligar o som do vídeo', 'data-dica': 'Ligar o som do vídeo' }, icone('somOff'))),
       paragrafos([s.depois]),
-      conversa(s.mensagens),
-      s.fecho && h('div', { class: 'fecho' }, conversa([s.fecho.mensagem]), manuscrito(s.fecho.manuscrito)),
+      celular(s.celular),
+      s.fecho && h('div', { class: 'fecho' }, s.fecho.texto && paragrafos([s.fecho.texto]), conversa([s.fecho.mensagem]), manuscrito(s.fecho.manuscrito)),
     ];
   },
 
@@ -193,10 +223,8 @@ const momentos = {
   'te-amo'(s) {
     return [
       paragrafos(s.texto),
-      h('div', { class: 'teamo-palco', 'data-teamo': '' },
-        h('p', { class: 'teamo-hora', 'aria-hidden': 'true' }, s.grande.quando.split(', ').pop()),
-        h('p', { class: 'teamo-grande', 'data-teamo-texto': '' }, h('span', { class: 'sr' }, 'você: '), s.grande.texto)),
-      conversa(s.mensagens),
+      celular(s.celular),
+      s.depois && h('div', { class: 'bloco' }, paragrafos([s.depois_texto]), manuscrito(s.depois)),
       s.ritual && h('div', { class: 'bloco ritual' }, paragrafos([s.ritual.texto]), conversa(s.ritual.mensagens, 'conversa--ritual')),
     ];
   },
@@ -241,18 +269,13 @@ const momentos = {
   },
 
   poente(s) {
-    const fotoSim = s.foto_sim;
     return [
       paragrafos(s.texto),
+      celular(s.celular, { trilha: 'baixo' }),
+      s.revelacao && h('div', { class: 'revelacao', 'data-revelacao': '' },
+        s.revelacao.map((l) => h('p', { class: 'revelacao__linha' }, l))),
       h('div', { class: 'poente-palco', 'data-poente': '' }, cenaPoente(),
         h('p', { class: 'poente-frase', 'data-poente-frase': '' }, s.frase_final)),
-      conversa(s.mensagens),
-      fotoSim && (fotoSim.m
-        ? foto(fotoSim, 'foto--sim')
-        : h('figure', { class: 'foto foto--sim foto--reserva' },
-          h('div', { class: 'reserva', style: 'aspect-ratio:4/5' },
-            svg('<circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1"/><path d="M10 6.2l2-2.4 2 2.4-2 1.2z" fill="none" stroke="currentColor" stroke-width="1"/>', 'reserva__anel'),
-            h('p', {}, fotoSim.placeholder)))),
     ];
   },
 };
@@ -274,15 +297,16 @@ function cenaPoente() {
     <radialGradient id="sol"><stop offset="0" stop-color="#FFE3B8"/><stop offset=".55" stop-color="#FFB070"/><stop offset="1" stop-color="#FF9A5A" stop-opacity="0"/></radialGradient>
     <clipPath id="acima"><rect x="0" y="0" width="400" height="430"/></clipPath>
   </defs>
-  <rect width="400" height="640" fill="url(#ceu)"/>
+  <rect x="-600" width="1600" height="640" fill="url(#ceu)"/>
   <g clip-path="url(#acima)"><circle data-sol cx="200" cy="250" r="70" fill="url(#sol)"/><circle data-sol-nucleo cx="200" cy="250" r="30" fill="#FFE9C9"/></g>
+  <rect x="-600" y="330" width="592" height="100" fill="#1A0A18"/><rect x="408" y="300" width="592" height="130" fill="#1A0A18"/>
   <path d="M-10 430 L-10 330 C 30 300 70 296 110 320 C 140 338 160 372 186 430 Z" fill="#1A0A18"/>
   <path d="M410 430 L410 300 C 370 280 330 286 300 312 C 270 338 252 380 236 430 Z" fill="#1A0A18"/>
-  <rect y="430" width="400" height="210" fill="url(#mar)"/>
+  <rect x="-600" y="430" width="1600" height="210" fill="url(#mar)"/>
   <g data-reflexo fill="#FFD3A1" opacity=".55">
-    <rect x="180" y="440" width="40" height="2" rx="1"/><rect x="170" y="452" width="60" height="2" rx="1"/>
-    <rect x="186" y="466" width="28" height="2" rx="1"/><rect x="160" y="482" width="80" height="2" rx="1"/>
-    <rect x="190" y="500" width="20" height="2" rx="1"/>
+    <rect x="180" y="438" width="40" height="2" rx="1"/><rect x="170" y="447" width="60" height="2" rx="1"/>
+    <rect x="186" y="457" width="28" height="2" rx="1"/><rect x="164" y="468" width="72" height="2" rx="1"/>
+    <rect x="190" y="479" width="20" height="2" rx="1"/>
   </g>
 </svg>`;
   return t.content.firstElementChild;
@@ -303,9 +327,13 @@ const secoes = {
   capitulo(s) {
     const corpo = (momentos[s.momento] || momentos.memoria)(s);
     return h('section', { class: `secao capitulo momento--${s.momento}`, 'data-tema': s.tema, 'data-seg': s.rotulo },
-      cabeca(s),
-      s.abre && h('div', { class: 'bloco bloco--abre' }, s.abre_texto && paragrafos([s.abre_texto]), conversa([s.abre])),
-      corpo);
+      cabeca(s), corpo);
+  },
+
+  // Tela quase vazia entre os atos, com uma frase só.
+  respiro(s) {
+    return h('section', { class: `respiro respiro--ato${s.ato}`, 'data-tema': s.tema, 'data-respiro': '', 'data-ato': s.ato },
+      h('p', { class: 'respiro__frase', 'data-respiro-frase': '' }, s.frase));
   },
 
   // Faixa de frases reais que corre de lado conforme a rolagem.
@@ -373,18 +401,22 @@ const secoes = {
   },
 
   contadores(s) {
-    const relogio = (it, cls = '') => h('div', { class: `contador ${cls}`, 'data-contador': it.inicio, 'data-antes': it.antes || '' },
+    const relogio = (it, cls = '') => h('div', { class: `contador ${cls}`, 'data-contador': it.inicio, 'data-antes': it.antes || '', 'data-revela-texto': cls === 'contador--um' ? '' : null },
       h('p', { class: 'contador__rotulo' }, it.rotulo),
       h('p', { class: 'contador__valor' },
         ['dias', 'horas', 'min', 'seg'].map((u) => h('span', { class: 'contador__parte' },
           h('span', { class: 'contador__num', 'data-u': u }, '0'), h('span', { class: 'contador__un' }, u)))),
       it.antes && h('p', { class: 'contador__antes', hidden: true }, it.antes));
+    const n = s.namoro;
     return h('section', { class: 'secao interludio contadores', 'data-tema': s.tema },
       h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
-      h('div', { class: 'contadores__lista' }, s.itens.map((it) => relogio(it))),
+      h('div', { class: 'contadores__lista' }, s.itens.map((it) => relogio(it, 'contador--um'))),
       h('div', { class: 'contadores__virada', 'data-virada': '' },
-        h('p', { class: 'contadores__ponte', 'data-virada-ponte': '' }, s.ponte),
-        relogio(s.namoro, 'contador--namoro')));
+        h('p', { class: 'contadores__ponte', 'data-virada-ponte': '' }, s.ponte)),
+      h('div', { class: 'contadores__namoro', 'data-namoro': '' },
+        fotoOuReserva(n.foto, 'foto--sim'),
+        relogio(n, 'contador--namoro'),
+        n.depois && h('p', { class: 'contadores__depois', 'data-namoro-depois': '' }, n.depois)));
   },
 
   carta(s) {
@@ -404,6 +436,7 @@ const secoes = {
 };
 
 export function montarSite(dados) {
+  UI = (dados.config && dados.config.ui) || {};
   const frag = document.createDocumentFragment();
   for (const s of dados.secoes) {
     const fn = secoes[s.tipo];
@@ -428,13 +461,14 @@ export function montarSegredo(sg) {
         h('span', { class: 'vale__titulo' }, v.titulo),
         v.citacao && h('span', { class: 'vale__citacao' }, `${v.data ? v.data + ' · ' : ''}“${v.citacao.texto}”`),
         v.texto && h('span', { class: 'vale__texto' }, v.texto),
-        h('span', { class: 'vale__estado' }, 'Toque pra destacar')),
+        h('span', { class: 'vale__estado' }, UI.vale_destacar)),
       v.carimbo && h('span', { class: 'vale__carimbo', 'aria-label': v.carimbo }, v.carimbo)));
 
   return h('dialog', { class: 'segredo', id: 'segredo', 'aria-labelledby': 'segredo-titulo' },
     h('div', { class: 'segredo__envelope', 'aria-hidden': 'true' }, h('span', { class: 'segredo__aba' })),
-    h('div', { class: 'segredo__carta' },
-      h('button', { class: 'icone-botao segredo__fechar', type: 'button', 'data-fechar': '', 'aria-label': 'Fechar o segredo', 'data-dica': 'Fechar' }, icone('fechar')),
+    h('div', { class: 'segredo__carta', 'data-lenis-prevent': '' },
+      h('div', { class: 'segredo__topo' },
+        h('button', { class: 'icone-botao segredo__fechar', type: 'button', 'data-fechar': '', 'aria-label': 'Fechar o segredo', 'data-dica': 'Fechar' }, icone('fechar'))),
       h('h2', { class: 'segredo__titulo', id: 'segredo-titulo' }, sg.titulo),
       h('p', { class: 'segredo__sub' }, sg.subtitulo),
       h('h3', { class: 'segredo__h3' }, sg.video.titulo),

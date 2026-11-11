@@ -7,7 +7,9 @@ import Lenis from 'lenis';
 gsap.registerPlugin(ScrollTrigger, SplitText);
 if (import.meta.env.DEV) window.__ST = ScrollTrigger;
 
-export const reduzido = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// "Reduzir movimento" do aparelho (ou ?calmo na URL, pra testar essa versão).
+export const reduzido = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  || new URLSearchParams(window.location.search).has('calmo');
 
 const TEMAS = {
   noite: '#1C0812',
@@ -37,8 +39,18 @@ export function iniciarRolagem() {
   return lenis;
 }
 
-export const pararRolagem = () => lenis && lenis.stop();
-export const voltarRolagem = () => lenis && lenis.start();
+export function pararRolagem() {
+  const y = window.scrollY;
+  if (lenis) lenis.stop();
+  return y;
+}
+export function voltarRolagem(y) {
+  if (lenis) lenis.start();
+  if (typeof y === 'number' && Math.abs(window.scrollY - y) > 1) {
+    if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
+    else window.scrollTo(0, y);
+  }
+}
 
 /* ---------- abertura (o único momento que anima sozinho) ---------- */
 export function animarAbertura() {
@@ -119,7 +131,7 @@ function fotos() {
 function conversas() {
   $$('[data-conversa]').forEach((c) => {
     const msgs = $$('.msg', c);
-    if (!msgs.length) return;
+    if (!msgs.length || c.closest('[data-celular]')) return;
     if (reduzido) {
       gsap.from(msgs, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: c, start: 'top 85%' } });
       return;
@@ -168,20 +180,124 @@ function memoria() {
 function story() {
   $$('[data-story]').forEach((bloco) => {
     const img = bloco.querySelector('[data-story-img]');
-    const citacao = bloco.querySelector('.resposta-story');
     if (reduzido) {
-      gsap.from([img, citacao], { opacity: 0, duration: 0.15, scrollTrigger: { trigger: bloco, start: 'top 80%' } });
+      gsap.from(img, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: bloco, start: 'top 80%' } });
       return;
     }
-    // O story chega inteiro e nítido: só cresce um pouco ao entrar.
     gsap.fromTo(img, { scale: 0.9, opacity: 0.4 }, {
       scale: 1, opacity: 1, ease: 'none',
       scrollTrigger: { trigger: img, start: 'top 95%', end: 'top 45%', scrub: 0.6 },
     });
-    if (citacao) {
-      gsap.from(citacao, { opacity: 0, y: 8, duration: 0.3, ease: 'power3.out',
-        scrollTrigger: { trigger: citacao, start: 'top 82%' } });
+  });
+}
+
+// Conversas "revividas": o celular fica preso na tela e cada mensagem chega
+// com a rolagem, com "digitando…" antes de cada rajada.
+function celulares(trilha) {
+  $$('[data-celular]').forEach((palco) => {
+    const fone = palco.querySelector('.celular');
+    const tela = palco.querySelector('[data-celular-tela]');
+    const lista = palco.querySelector('[data-celular-lista]');
+    const msgs = $$('.msg', lista);
+    const data = palco.querySelector('[data-celular-data]');
+    const dig = palco.querySelector('[data-celular-digitando]');
+    const fecho = palco.querySelector('[data-celular-fecho]');
+    const explode = palco.querySelector('[data-celular-explode]');
+    if (reduzido || !msgs.length) { palco.classList.add('celular-palco--estatico'); return; }
+
+    // Uma rajada nova começa quando muda quem fala ou quando o horário mudou.
+    const rajadas = [];
+    msgs.forEach((m, i) => {
+      const ant = msgs[i - 1];
+      if (!ant || m.classList.contains('msg--ini') || ant.querySelector('.msg__hora')) rajadas.push([]);
+      rajadas[rajadas.length - 1].push(m);
+    });
+    // Quanto a lista precisa subir pra mensagem m caber na tela do celular.
+    const subir = (m) => () => -Math.max(0, m.offsetTop + m.offsetHeight + 16 - tela.clientHeight);
+
+    const tl = gsap.timeline();
+    gsap.set(dig, { opacity: 0 });
+    rajadas.forEach((r) => {
+      const ela = r[0].classList.contains('msg--ela');
+      const ancora = document.createElement('div');
+      ancora.className = `celular__ancora celular__ancora--${ela ? 'ela' : 'ele'}${r[0].classList.contains('msg--ini') ? ' celular__ancora--ini' : ''}`;
+      ancora.setAttribute('aria-hidden', 'true');
+      ancora.innerHTML = `<span class="digitando digitando--${ela ? 'ela' : 'ele'}"><i></i><i></i><i></i></span>`;
+      r[0].before(ancora);
+      const pontos = ancora.firstChild;
+      gsap.set(pontos, { opacity: 0 });
+
+      tl.to(lista, { y: subir(r[0]), duration: 0.3, ease: 'power2.out' })
+        .to(pontos, { opacity: 1, duration: 0.15 }, '<');
+      if (ela) tl.to(data, { opacity: 0, duration: 0.15 }, '<').to(dig, { opacity: 1, duration: 0.15 }, '<');
+      tl.to({}, { duration: 0.55 })
+        .to(pontos, { opacity: 0, duration: 0.1 });
+      if (ela) tl.to(dig, { opacity: 0, duration: 0.1 }, '<').to(data, { opacity: 1, duration: 0.1 }, '<');
+
+      r.forEach((m) => {
+        if (explode && m.classList.contains('msg--explode')) {
+          // A mensagem toma a tela inteira antes de pousar no celular.
+          const palavras = SplitText.create(explode, { type: 'words', wordsClass: 'palavra' }).words;
+          gsap.set(explode, { opacity: 1 });
+          tl.to(fone, { opacity: 0.08, scale: 0.94, duration: 0.4 })
+            .fromTo(palco, { backgroundColor: 'rgba(122, 16, 41, 0)' }, { backgroundColor: 'rgba(122, 16, 41, 1)', duration: 0.4 }, '<')
+            .fromTo(palavras, { opacity: 0, scale: 0.4, yPercent: 30 }, { opacity: 1, scale: 1, yPercent: 0, ease: 'expo.out', stagger: 0.25, duration: 0.6 })
+            .to({}, { duration: 1.1 })
+            .to(palavras, { opacity: 0, duration: 0.4 })
+            .to(fone, { opacity: 1, scale: 1, duration: 0.4 }, '<')
+            .to(palco, { backgroundColor: 'rgba(122, 16, 41, 0)', duration: 0.5 }, '<');
+        }
+        tl.to(lista, { y: subir(m), duration: 0.25, ease: 'power2.out' })
+          .fromTo(m, { opacity: 0, y: 12, scale: 0.92, transformOrigin: ela ? '0% 100%' : '100% 100%' },
+            { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: 'power3.out' }, '<')
+          .to({}, { duration: 0.4 });
+      });
+    });
+    if (fecho) tl.fromTo(fecho, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4 }).to({}, { duration: 1 });
+    else tl.to({}, { duration: 0.7 });
+
+    const nivel = palco.dataset.trilha;
+    ScrollTrigger.create({
+      animation: tl, trigger: palco, start: 'top top', end: `+=${Math.round(tl.duration() * 20)}%`,
+      pin: true, scrub: 0.5, invalidateOnRefresh: true,
+      onToggle: (st) => { if (nivel && trilha) trilha.nivel(st.isActive ? nivel : 'normal'); },
+    });
+  });
+}
+
+// Tela escura com as linhas da revelação, uma a uma.
+function revelacoes() {
+  $$('[data-revelacao]').forEach((palco) => {
+    const linhas = $$('.revelacao__linha', palco);
+    if (reduzido) { palco.classList.add('revelacao--estatica'); return; }
+    const tl = gsap.timeline()
+      .fromTo(palco, { backgroundColor: 'rgba(8, 3, 6, 0)' }, { backgroundColor: 'rgba(8, 3, 6, 1)', duration: 0.6 })
+      .to({}, { duration: 0.6 });
+    linhas.forEach((l, i) => {
+      if (i) tl.to(linhas[i - 1], { opacity: 0.35, duration: 0.5 });
+      tl.fromTo(l, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.7, ease: 'power2.out' }, i ? '<' : '>')
+        .to({}, { duration: 1.1 });
+    });
+    tl.to(linhas, { opacity: 0, duration: 0.6 })
+      .to(palco, { backgroundColor: 'rgba(8, 3, 6, 0)', duration: 0.6 }, '<');
+    ScrollTrigger.create({ animation: tl, trigger: palco, start: 'top top', end: `+=${Math.round(tl.duration() * 36)}%`, pin: true, scrub: 0.8 });
+  });
+}
+
+// Telas de respiro entre os atos: a frase acende no meio da tela e apaga ao sair.
+// A do Ato 3 também troca a trilha.
+function respiros(trilha) {
+  $$('[data-respiro]').forEach((r) => {
+    const frase = r.querySelector('[data-respiro-frase]');
+    if (r.dataset.ato === '3' && trilha) {
+      ScrollTrigger.create({ trigger: r, start: 'top 60%', once: true, onEnter: () => trilha.final() });
     }
+    if (reduzido) { gsap.from(frase, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: r, start: 'top 70%' } }); return; }
+    const palavras = SplitText.create(frase, { type: 'words', wordsClass: 'palavra' }).words;
+    gsap.timeline({ scrollTrigger: { trigger: r, start: 'top 75%', end: 'bottom 25%', scrub: 0.8 } })
+      .fromTo(palavras, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.5, stagger: 0.12, ease: 'power2.out' })
+      .to({}, { duration: 1 })
+      .to(frase, { opacity: 0, duration: 0.6 });
   });
 }
 
@@ -268,21 +384,6 @@ function lados() {
     if (reduzido) { gsap.from([a, b], { opacity: 0, duration: 0.15, scrollTrigger: { trigger: l, start: 'top 80%' } }); return; }
     gsap.from(a, { xPercent: -30, opacity: 0, ease: 'none', scrollTrigger: { trigger: l, start: 'top 90%', end: 'top 50%', scrub: 0.6 } });
     gsap.from(b, { xPercent: 30, opacity: 0, ease: 'none', scrollTrigger: { trigger: b, start: 'top 90%', end: 'top 50%', scrub: 0.6 } });
-  });
-}
-
-function teAmo() {
-  $$('[data-teamo]').forEach((palco) => {
-    const txt = palco.querySelector('[data-teamo-texto]');
-    const hora = palco.querySelector('.teamo-hora');
-    if (reduzido) { gsap.from([hora, txt], { opacity: 0, duration: 0.15, scrollTrigger: { trigger: palco, start: 'top 70%' } }); return; }
-    const split = SplitText.create(txt, { type: 'words', wordsClass: 'palavra' });
-    gsap.timeline({ scrollTrigger: { trigger: palco, start: 'top top', end: '+=130%', pin: true, scrub: 0.6 } })
-      .from(hora, { opacity: 0, y: 10, duration: 0.3 })
-      .from(split.words, { opacity: 0, scale: 0.4, yPercent: 30, ease: 'expo.out', stagger: 0.25, duration: 0.6 })
-      .fromTo(palco, { backgroundColor: 'rgba(122, 16, 41, 0)' }, { backgroundColor: 'rgba(122, 16, 41, 1)', duration: 0.6 }, '<0.2')
-      .to({}, { duration: 0.4 })
-      .to(palco, { backgroundColor: 'rgba(122, 16, 41, 0)', duration: 0.4 });
   });
 }
 
@@ -390,38 +491,78 @@ function painel() {
   });
 }
 
-function poente() {
+function poente(trilha) {
   $$('[data-poente]').forEach((palco) => {
+    const cena = palco.querySelector('.cena');
     const sol = $$('[data-sol], [data-sol-nucleo]', palco);
     const ceu = $$('[data-ceu]', palco);
     const frase = palco.querySelector('[data-poente-frase]');
     const reflexo = palco.querySelector('[data-reflexo]');
+
+    // Em tela larga, abre o enquadramento pros lados em vez de cortar o céu.
+    const enquadrar = () => {
+      const a = palco.clientWidth / Math.max(1, palco.clientHeight);
+      if (a > 0.72) {
+        const altura = 470; const largura = Math.min(1600, altura * a);
+        cena.setAttribute('viewBox', `${200 - largura / 2} ${640 - altura} ${largura} ${altura}`);
+      } else cena.setAttribute('viewBox', '0 0 400 640');
+    };
+    enquadrar();
+    window.addEventListener('resize', enquadrar);
+
     if (reduzido) {
       gsap.set(sol, { attr: { cy: 360 } });
       gsap.from(frase, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: palco, start: 'top 50%' } });
       return;
     }
-    gsap.timeline({ scrollTrigger: { trigger: palco, start: 'top top', end: '+=160%', pin: true, scrub: 0.8 } })
+    let alto = false;
+    gsap.timeline({
+      scrollTrigger: {
+        trigger: palco, start: 'top top', end: '+=220%', pin: true, scrub: 0.8,
+        onUpdate: (st) => {
+          const agora = st.progress > 0.62 && st.progress < 1;
+          if (agora !== alto && trilha) { alto = agora; trilha.nivel(alto ? 'alto' : 'normal'); }
+        },
+        onLeave: () => { if (alto && trilha) { alto = false; trilha.nivel('normal'); } },
+        onLeaveBack: () => { if (alto && trilha) { alto = false; trilha.nivel('normal'); } },
+      },
+    })
       .to(sol, { attr: { cy: 445 }, ease: 'none', duration: 1 })
       .to(ceu[0], { attr: { 'stop-color': '#16173F' }, duration: 1, ease: 'none' }, 0)
       .to(ceu[1], { attr: { 'stop-color': '#E0607E' }, duration: 1, ease: 'none' }, 0)
       .to(ceu[2], { attr: { 'stop-color': '#FFB38A' }, duration: 1, ease: 'none' }, 0)
       .to(reflexo, { opacity: 0.95, scaleX: 1.4, transformOrigin: '50% 0%', duration: 1, ease: 'none' }, 0)
-      .from(frase, { opacity: 0, y: 16, duration: 0.3 }, 0.75)
-      .to({}, { duration: 0.3 });
+      .fromTo(frase, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.25 }, 0.68)
+      .to({}, { duration: 0.6 });
   });
 }
 
 function virada() {
   $$('[data-virada]').forEach((v) => {
     const ponte = v.querySelector('[data-virada-ponte]');
-    const namoro = v.querySelector('.contador--namoro');
-    if (reduzido) { gsap.from([ponte, namoro], { opacity: 0, duration: 0.15, scrollTrigger: { trigger: v, start: 'top 70%' } }); return; }
-    gsap.timeline({ scrollTrigger: { trigger: v, start: 'top top', end: '+=110%', pin: true, scrub: 0.6 } })
-      .from(ponte, { opacity: 0, y: 20, duration: 0.4 })
-      .to(ponte, { opacity: 0.35, scale: 0.9, duration: 0.4 }, '+=0.3')
-      .fromTo(namoro, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.6, ease: 'expo.out' }, '<')
-      .to({}, { duration: 0.4 });
+    if (reduzido) { gsap.from(ponte, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: v, start: 'top 70%' } }); return; }
+    const tl = gsap.timeline()
+      .fromTo(v, { backgroundColor: 'rgba(8, 3, 6, 0)' }, { backgroundColor: 'rgba(8, 3, 6, 1)', duration: 0.5 })
+      .fromTo(ponte, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.6, ease: 'power2.out' })
+      .to({}, { duration: 1.3 })
+      .to(ponte, { opacity: 0, duration: 0.5 })
+      .to(v, { backgroundColor: 'rgba(8, 3, 6, 0)', duration: 0.5 }, '<');
+    ScrollTrigger.create({ animation: tl, trigger: v, start: 'top top', end: '+=180%', pin: true, scrub: 0.8 });
+  });
+  $$('[data-namoro]').forEach((n) => {
+    const relogio = n.querySelector('.contador--namoro');
+    const depois = n.querySelector('[data-namoro-depois]');
+    if (reduzido) { gsap.from([relogio, depois], { opacity: 0, duration: 0.15, scrollTrigger: { trigger: n, start: 'top 70%' } }); return; }
+    gsap.fromTo(relogio, { opacity: 0, scale: 0.6 }, {
+      opacity: 1, scale: 1, duration: 0.9, ease: 'expo.out',
+      scrollTrigger: { trigger: relogio, start: 'top 80%' },
+    });
+    if (depois) {
+      gsap.fromTo(depois, { opacity: 0, y: 14 }, {
+        opacity: 1, y: 0, duration: 0.8, ease: 'power2.out',
+        scrollTrigger: { trigger: depois, start: 'top 78%' },
+      });
+    }
   });
 }
 
@@ -511,7 +652,7 @@ function amo() {
     gsap.set(itens[0], { yPercent: 0, opacity: 1 });
     const tl = gsap.timeline({
       scrollTrigger: {
-        trigger: palco, start: 'top top', end: `+=${itens.length * 55}%`, pin: true, scrub: 0.5,
+        trigger: palco, start: 'top top', end: `+=${itens.length * 40}%`, pin: true, scrub: 0.5,
         onUpdate: (st) => { n.textContent = String(Math.min(itens.length, 1 + Math.floor(st.progress * itens.length))); },
       },
     });
@@ -526,7 +667,7 @@ function amo() {
   });
 }
 
-export function iniciarEfeitos({ barra, abaixar }) {
+export function iniciarEfeitos({ barra, abaixar, trilha }) {
   fundo();
   cabecas();
   faixas();
@@ -535,18 +676,20 @@ export function iniciarEfeitos({ barra, abaixar }) {
   textos();
   memoria();
   story();
+  celulares(trilha);
+  revelacoes();
+  respiros(trilha);
   beijo(abaixar);
   adesivo();
   placar();
   lados();
-  teAmo();
   galeria();
   muito();
   ponto();
   elaDiz();
   numeros();
   painel();
-  poente();
+  poente(trilha);
   virada();
   carta();
   fotos();

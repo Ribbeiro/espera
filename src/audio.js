@@ -60,8 +60,13 @@ function rampa(alvo, segundos) {
   }
 }
 
+// Nível da trilha: mais baixa nas conversas do final, mais alta no "sim".
+const NIVEIS = { baixo: 0.55, normal: 1, alto: 1.4 };
+let nivel = 'normal';
+let trilhaFeita = false;
+
 function volumeAlvo() {
-  return abaixado > 0 ? VOLUME_BAIXO : VOLUME;
+  return abaixado > 0 ? VOLUME_BAIXO : Math.min(1, VOLUME * NIVEIS[nivel]);
 }
 
 function avisar() {
@@ -141,3 +146,24 @@ export function pausarDurante() {
 }
 
 export const estaTocando = () => tocando;
+
+export function definirNivel(n) {
+  if (!NIVEIS[n] || n === nivel) return;
+  nivel = n;
+  if (tocando && abaixado === 0) rampa(volumeAlvo(), 1.5);
+}
+
+/** Entrada do Ato 3: some em ~3 s e recomeça na faixa principal (só se o som estiver ligado). */
+export async function trilhaFinal() {
+  if (trilhaFeita || !tocando || !faixas.length) return;
+  trilhaFeita = true;
+  rampa(0, 3);
+  await new Promise((r) => setTimeout(r, 3000));
+  if (!tocando) return;
+  try {
+    if (atual !== 0 || !carregado) { atual = 0; await carregar(0); } else el.currentTime = 0;
+    avisar();
+    await el.play();
+    rampa(volumeAlvo(), 2.5);
+  } catch { /* segue sem trocar */ }
+}

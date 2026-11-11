@@ -91,7 +91,7 @@ async function abrirSite(dados, comMusica) {
 
   carregarMidiaPreguicosa();
   iniciarContadores();
-  ligarSegredo(segredo);
+  ligarSegredo(segredo, dados.config.ui || {});
   ligarDicas();
 
   await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 60); });
@@ -101,7 +101,7 @@ async function abrirSite(dados, comMusica) {
   window.scrollTo(0, 0);
 
   iniciarRolagem();
-  iniciarEfeitos({ barra, abaixar: audio.abaixar });
+  iniciarEfeitos({ barra, abaixar: audio.abaixar, trilha: { final: audio.trilhaFinal, nivel: audio.definirNivel } });
   animarAbertura();
 }
 
@@ -143,6 +143,8 @@ function montarPlayer(musicas) {
   const tocar = h('button', { class: 'icone-botao', type: 'button', 'aria-label': 'Tocar música', 'data-dica': 'Tocar música' }, icone('play'));
   const trocar = h('button', { class: 'icone-botao', type: 'button', 'aria-label': 'Trocar de música', 'data-dica': 'Trocar de música' }, icone('trocar'));
   const nome = h('p', { class: 'player__nome', 'aria-live': 'polite' });
+  let ultima = '';
+  let some;
   tocar.addEventListener('click', () => { audio.destravar(); audio.alternar(); });
   trocar.addEventListener('click', () => { audio.destravar(); audio.proxima(); });
   if (musicas.filter((m) => m.m).length < 2) trocar.hidden = true;
@@ -151,8 +153,15 @@ function montarPlayer(musicas) {
     const r = tocando ? 'Pausar música' : 'Tocar música';
     tocar.setAttribute('aria-label', r);
     tocar.dataset.dica = r;
-    nome.textContent = faixa ? `${faixa.titulo} · ${faixa.artista}` : '';
-    nome.classList.toggle('visivel', !!tocando);
+    const chave = tocando && faixa ? faixa.titulo : '';
+    if (chave && chave !== ultima) {
+      nome.textContent = `${faixa.titulo} · ${faixa.artista}`;
+      nome.classList.add('visivel');
+      clearTimeout(some);
+      some = setTimeout(() => nome.classList.remove('visivel'), 2600);
+    }
+    if (!tocando) { nome.classList.remove('visivel'); clearTimeout(some); }
+    ultima = chave;
   });
   return h('div', { class: 'player' }, nome, tocar, trocar);
 }
@@ -191,31 +200,49 @@ function iniciarContadores() {
     inicio: new Date(el.dataset.contador).getTime(),
     partes: Object.fromEntries([...el.querySelectorAll('[data-u]')].map((p) => [p.dataset.u, p])),
     antes: el.querySelector('.contador__antes'),
+    fator: el.classList.contains('contador--namoro') ? 0 : 1,
   }));
-  const tick = () => {
+  for (const c of conts) {
+    if (c.fator === 1) continue;
+    new IntersectionObserver(([e], io) => {
+      if (!e.isIntersecting) return;
+      io.disconnect();
+      if (reduzido) { c.fator = 1; tick(); return; }
+      const t0 = performance.now();
+      const sobe = (t) => {
+        const k = Math.min(1, (t - t0) / 1800);
+        c.fator = 1 - Math.pow(1 - k, 3);
+        tick();
+        if (k < 1) requestAnimationFrame(sobe);
+      };
+      requestAnimationFrame(sobe);
+    }, { threshold: 0.6 }).observe(c.el);
+  }
+  function tick() {
     const agora = Date.now();
     for (const c of conts) {
       const futuro = agora < c.inicio;
       if (c.antes) { c.antes.hidden = !futuro; c.el.classList.toggle('futuro', futuro); }
-      let s = Math.max(0, Math.floor((agora - c.inicio) / 1000));
+      let s = Math.max(0, Math.floor(((agora - c.inicio) / 1000) * c.fator));
       const v = { dias: Math.floor(s / 86400), horas: Math.floor((s % 86400) / 3600), min: Math.floor((s % 3600) / 60), seg: s % 60 };
       for (const [u, p] of Object.entries(c.partes)) {
         const t = u === 'dias' ? String(v[u]) : String(v[u]).padStart(2, '0');
         if (p.textContent !== t) p.textContent = t;
       }
     }
-  };
+  }
   tick();
   setInterval(tick, 1000);
 }
 
 /* ---------- segredo (a pontinho) ---------- */
 
-function ligarSegredo(dlg) {
+function ligarSegredo(dlg, ui) {
   const pontinho = document.querySelector('[data-pontinho]');
   if (!pontinho) return;
   let retomar = null;
   let parado;
+  let posicao = 0;
   const acordar = () => {
     pontinho.classList.remove('pulsando');
     clearTimeout(parado);
@@ -225,8 +252,10 @@ function ligarSegredo(dlg) {
   acordar();
 
   pontinho.addEventListener('click', () => {
-    pararRolagem();
+    posicao = pararRolagem();
+    document.documentElement.classList.add('travado');
     dlg.showModal();
+    dlg.querySelector('.segredo__carta').scrollTop = 0;
     dlg.classList.remove('fechando');
     dlg.classList.add('abrindo');
     dlg.querySelector('[data-fechar]').focus();
@@ -241,7 +270,12 @@ function ligarSegredo(dlg) {
     dlg.classList.add('fechando');
     setTimeout(() => { dlg.close(); dlg.classList.remove('abrindo', 'fechando'); }, reduzido ? 0 : 150);
   };
-  dlg.addEventListener('close', () => { voltarRolagem(); pontinho.focus(); if (retomar) { retomar(); retomar = null; } });
+  dlg.addEventListener('close', () => {
+    document.documentElement.classList.remove('travado');
+    pontinho.focus({ preventScroll: true });
+    voltarRolagem(posicao);
+    if (retomar) { retomar(); retomar = null; }
+  });
   dlg.addEventListener('cancel', (e) => { e.preventDefault(); fechar(); });
   dlg.querySelector('[data-fechar]').addEventListener('click', fechar);
   dlg.addEventListener('click', (e) => { if (e.target === dlg) fechar(); });
@@ -261,7 +295,7 @@ function ligarSegredo(dlg) {
     const marcar = (on) => {
       b.setAttribute('aria-pressed', String(on));
       b.closest('.vale').classList.toggle('destacado', on);
-      b.querySelector('.vale__estado').textContent = on ? 'Destacado. Toque de novo pra devolver' : 'Toque pra destacar';
+      b.querySelector('.vale__estado').textContent = on ? ui.vale_devolver : ui.vale_destacar;
     };
     marcar(salvos.includes(i));
     b.addEventListener('click', () => {
