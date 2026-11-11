@@ -14,35 +14,24 @@ const campo = document.getElementById('cadeado-campo');
 const msg = document.getElementById('cadeado-msg');
 const entrar = document.getElementById('cadeado-entrar');
 const app = document.getElementById('app');
-const slots = [...document.querySelectorAll('.cadeado__slots span')];
 
 /* ---------- tela de senha ---------- */
 
-function pintarSlots() {
-  const v = input.value;
-  slots.forEach((s, i) => {
-    s.textContent = v[i] || '';
-    s.classList.toggle('cheio', !!v[i]);
-    s.classList.toggle('atual', i === Math.min(v.length, 5) && document.activeElement === input);
-  });
-}
+// A senha vale do jeito que ela digitar: sem diferença de maiúscula, acento ou espaço.
+const normalizar = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 input.addEventListener('input', () => {
-  input.value = input.value.replace(/\D/g, '').slice(0, 6);
   msg.textContent = '';
   campo.classList.remove('erro');
-  pintarSlots();
 });
-input.addEventListener('focus', pintarSlots);
-input.addEventListener('blur', pintarSlots);
-campo.addEventListener('click', () => input.focus());
 
 let ocupado = false;
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (ocupado) return;
-  if (input.value.length < 6) {
-    avisar('Faltam números. São 6: dia, mês e ano.');
+  const senha = normalizar(input.value);
+  if (!senha) {
+    avisar('Escreve a senha aqui em cima.');
     return;
   }
   audio.destravar(); // precisa estar dentro do toque (iPhone)
@@ -50,14 +39,14 @@ form.addEventListener('submit', async (e) => {
   entrar.setAttribute('aria-busy', 'true');
   const giro = setTimeout(() => entrar.classList.add('carregando'), 100);
   try {
-    const site = await entrarComSenha(input.value);
+    const site = await entrarComSenha(senha);
     await abrirSite(site, true);
   } catch (err) {
     if (err.message === 'senha') {
-      avisar('Não é essa, amor. Pensa na data de novo (ddmmaa).');
+      avisar('Ainda não é essa. Espera a senha certa.');
       input.select();
     } else {
-      avisar('A internet falhou no meio do caminho. Confere a conexão e toca em Entrar de novo.');
+      avisar('A internet falhou no meio do caminho. Confere a conexão e toca em Abrir de novo.');
     }
   } finally {
     clearTimeout(giro);
@@ -315,6 +304,5 @@ function ligarSegredo(dlg, ui) {
   } else {
     cadeado.classList.add('pronto');
     if (window.matchMedia('(hover: hover)').matches) input.focus();
-    pintarSlots();
   }
 })();

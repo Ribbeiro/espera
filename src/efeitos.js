@@ -62,7 +62,9 @@ export function animarAbertura() {
     return;
   }
   const split = SplitText.create(nome, { type: 'chars', charsClass: 'letra' });
-  gsap.timeline({ delay: 0.2 })
+  // Se a abertura não é a primeira tela, o nome se monta quando ela chega nele.
+  const primeira = document.querySelector('main > section') === nome.closest('section');
+  gsap.timeline(primeira ? { delay: 0.2 } : { scrollTrigger: { trigger: nome, start: 'top 80%' } })
     .from(split.chars, { yPercent: 60, opacity: 0, rotate: 6, duration: 1.1, ease: 'expo.out', stagger: 0.07 })
     .from(subs, { opacity: 0, y: 8, duration: 0.3, ease: 'power2.out', stagger: 0.1 }, '-=0.4');
 
@@ -289,6 +291,17 @@ function revelacoes() {
 function respiros(trilha) {
   $$('[data-respiro]').forEach((r) => {
     const frase = r.querySelector('[data-respiro-frase]');
+    if (r.dataset.ato === '0') {
+      // Primeira tela depois da senha: a frase se monta sozinha e some ao descer.
+      const dica = r.querySelector('[data-respiro-dica]');
+      if (reduzido) { gsap.from([frase, dica], { opacity: 0, duration: 0.15 }); return; }
+      const pal = SplitText.create(frase, { type: 'words', wordsClass: 'palavra' }).words;
+      gsap.timeline({ delay: 0.5 })
+        .from(pal, { opacity: 0, yPercent: 40, duration: 0.9, ease: 'expo.out', stagger: 0.18 })
+        .from(dica, { opacity: 0, y: 8, duration: 0.3, ease: 'power2.out' }, '+=0.4');
+      gsap.to([frase, dica], { opacity: 0, ease: 'none', scrollTrigger: { trigger: r, start: 'top top', end: 'bottom 30%', scrub: true } });
+      return;
+    }
     if (r.dataset.ato === '3' && trilha) {
       ScrollTrigger.create({ trigger: r, start: 'top 60%', once: true, onEnter: () => trilha.final() });
     }

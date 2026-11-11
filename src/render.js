@@ -333,7 +333,8 @@ const secoes = {
   // Tela quase vazia entre os atos, com uma frase só.
   respiro(s) {
     return h('section', { class: `respiro respiro--ato${s.ato}`, 'data-tema': s.tema, 'data-respiro': '', 'data-ato': s.ato },
-      h('p', { class: 'respiro__frase', 'data-respiro-frase': '' }, s.frase));
+      h('p', { class: 'respiro__frase', 'data-respiro-frase': '' }, s.frase),
+      s.dica && h('p', { class: 'respiro__dica', 'data-respiro-dica': '' }, s.dica, icone('seta')));
   },
 
   // Faixa de frases reais que corre de lado conforme a rolagem.

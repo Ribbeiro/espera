@@ -9,7 +9,7 @@ const CONTEUDO = join(ROOT, 'conteudo');
 if (!existsSync(DIST)) { console.error('✖ Não achei a pasta dist/. Rode npm run build.'); process.exit(1); }
 
 const site = JSON.parse(readFileSync(join(CONTEUDO, 'site.json'), 'utf8'));
-const senha = readFileSync(join(CONTEUDO, 'senha.txt'), 'utf8').trim();
+const senha = readFileSync(join(CONTEUDO, 'senha.txt'), 'utf8').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // Todas as strings do JSON (menos nomes de arquivo e chaves técnicas), quebradas em trechos.
 const IGNORAR = new Set(['arquivo', 'inicio', 'tipo', 'momento', 'tema', 'de', 'mime', 'id']);

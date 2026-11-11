@@ -24,7 +24,8 @@ function lerSenha() {
     console.error('\n✖ Falta o arquivo conteudo/senha.txt (só com a senha dentro).\n');
     process.exit(1);
   }
-  return readFileSync(arq, 'utf8').trim();
+  // Mesma regra do site: sem diferença de maiúscula, acento ou espaço.
+  return readFileSync(arq, 'utf8').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function lerSalt() {
