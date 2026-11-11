@@ -1,0 +1,12 @@
+# Conteúdo bruto (história, fotos, vídeos, senha) NUNCA vai pro git
+conteudo/
+LEIA-ME-*.md
+
+# Gerado no build (já criptografado, mas não precisa versionar)
+public/c/
+dist/
+
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
