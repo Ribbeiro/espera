@@ -27,6 +27,29 @@ const TEMAS = {
 
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 
+// Pra quem só precisa "aparecer quando chega na tela": um observador leve do
+// navegador, em vez de um gatilho de rolagem que precisa ser recalculado.
+const vistos = new Map();
+let olho = null;
+function aoVer(el, cb, folga = '0px 0px -14% 0px') {
+  if (!el) return;
+  const chave = folga;
+  if (!vistos.has(chave)) {
+    vistos.set(chave, new IntersectionObserver((entradas, obs) => {
+      entradas.forEach((e) => {
+        if (!e.isIntersecting) return;
+        obs.unobserve(e.target);
+        const f = e.target.__aoVer; e.target.__aoVer = null;
+        f && f();
+      });
+    }, { rootMargin: folga }));
+  }
+  olho = vistos.get(chave);
+  const antes = el.__aoVer;
+  el.__aoVer = antes ? () => { antes(); cb(); } : cb;
+  olho.observe(el);
+}
+
 let lenis = null;
 
 export function iniciarRolagem() {
@@ -104,16 +127,16 @@ function titulos() {
       return;
     }
     const split = SplitText.create(el, { type: 'words,chars', charsClass: 'letra', mask: 'words' });
-    gsap.from(split.chars, {
-      yPercent: 110, duration: 0.9, ease: 'expo.out', stagger: 0.025,
-      scrollTrigger: { trigger: el, start: 'top 85%' },
-    });
+    gsap.set(split.chars, { yPercent: 110 });
+    aoVer(el, () => gsap.to(split.chars, { yPercent: 0, duration: 0.9, ease: 'expo.out', stagger: 0.025 }));
   });
 }
 
 function textos() {
   $$('[data-revela-texto], .cap-rotulo, .cap-data').forEach((el) => {
-    gsap.from(el, { ...aparecer(el), scrollTrigger: { trigger: el, start: 'top 88%' } });
+    const { opacity, y = 0, ...resto } = aparecer(el);
+    gsap.set(el, { opacity, y });
+    aoVer(el, () => gsap.to(el, { opacity: 1, y: 0, ...resto }), '0px 0px -10% 0px');
   });
 }
 
@@ -146,7 +169,7 @@ function fotos() {
 function conversas() {
   $$('[data-conversa]').forEach((c) => {
     const msgs = $$('.msg', c);
-    if (!msgs.length || c.closest('[data-celular]')) return;
+    if (!msgs.length || c.closest('[data-celular], [data-telinha]')) return;
     if (reduzido) {
       gsap.from(msgs, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: c, start: 'top 85%' } });
       return;
@@ -156,9 +179,7 @@ function conversas() {
       const ela = m.classList.contains('msg--ela');
       gsap.set(m, { opacity: 0, y: 14, x: ela ? -24 : 24, scale: 0.9, transformOrigin: ela ? '0% 100%' : '100% 100%' });
     });
-    ScrollTrigger.create({
-      trigger: c, start: 'top 82%', once: true,
-      onEnter: () => {
+    aoVer(c, () => {
         const tl = gsap.timeline();
         msgs.forEach((m, i) => {
           const dig = digitando(m);
@@ -167,8 +188,7 @@ function conversas() {
             .to(dig, { opacity: 0, duration: 0.1, delay: Math.min(0.55, 0.2 + m.textContent.length * 0.006), onComplete: () => dig.remove() })
             .to(m, { opacity: 1, y: 0, x: 0, scale: 1, duration: 0.35, ease: 'power3.out' });
         });
-      },
-    });
+    }, '0px 0px -18% 0px');
   });
 }
 
@@ -234,6 +254,9 @@ function celulares(trilha) {
     gsap.set(dig, { opacity: 0 });
     rajadas.forEach((r) => {
       const ela = r[0].classList.contains('msg--ela');
+      // Etiqueta de dia (como no Zap): aparece junto da primeira mensagem daquele dia.
+      const dia = r[0].previousElementSibling?.classList.contains('celular__dia') ? r[0].previousElementSibling : null;
+      if (dia) { gsap.set(dia, { opacity: 0 }); tl.to(dia, { opacity: 1, duration: 0.2 }); }
       const ancora = document.createElement('div');
       ancora.className = `celular__ancora celular__ancora--${ela ? 'ela' : 'ele'}${r[0].classList.contains('msg--ini') ? ' celular__ancora--ini' : ''}`;
       ancora.setAttribute('aria-hidden', 'true');
@@ -283,7 +306,7 @@ function celulares(trilha) {
       gsap.set(dica, { opacity: 0 });
     }
     ScrollTrigger.create({
-      animation: tl, trigger: palco, start: 'top top', end: `+=${Math.round(tl.duration() * 20)}%`,
+      animation: tl, trigger: palco, start: 'top top', end: `+=${Math.round(tl.duration() * 20 * (Number(palco.dataset.ritmo) || 1))}%`,
       pin: true, scrub: 0.5, invalidateOnRefresh: true,
       onToggle: (st) => { if (nivel && trilha) trilha.nivel(st.isActive ? nivel : 'normal'); },
       onUpdate: (st) => { if (dica) gsap.to(dica, { opacity: st.progress > 0.002 && st.progress < 0.06 ? 1 : 0, duration: 0.3, overwrite: 'auto' }); },
@@ -323,7 +346,8 @@ function respiros(trilha) {
       gsap.timeline({ delay: 0.5 })
         .from(pal, { opacity: 0, yPercent: 40, duration: 0.9, ease: 'expo.out', stagger: 0.18 })
         .from(dica, { opacity: 0, y: 8, duration: 0.3, ease: 'power2.out' }, '+=0.4');
-      gsap.to([frase, dica], { opacity: 0, ease: 'none', scrollTrigger: { trigger: r, start: 'top top', end: 'bottom 30%', scrub: true } });
+      gsap.timeline({ scrollTrigger: { trigger: r, start: 'top top', end: 'bottom 30%', scrub: true } })
+        .to([frase, dica], { opacity: 0, ease: 'none' });
       return;
     }
     if (r.dataset.ato === '3' && trilha) {
@@ -474,16 +498,37 @@ function ponto() {
   });
 }
 
-function elaDiz() {
-  $$('[data-ela-diz]').forEach((lista) => {
-    const msgs = $$('.msg', lista);
-    if (reduzido) { gsap.from(msgs, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: lista, start: 'top 80%' } }); return; }
-    msgs.forEach((m) => {
-      gsap.fromTo(m, { opacity: 0, y: 30, scale: 0.94 }, {
-        opacity: 1, y: 0, scale: 1, ease: 'power2.out',
-        scrollTrigger: { trigger: m, start: 'top 92%', end: 'top 70%', scrub: 0.5 },
-      });
-    });
+// Celulares curtos: não prendem a tela. Quando aparecem, a conversa acontece
+// sozinha: "digitando…" no topo (quando é ela) e no lugar do balão, depois a mensagem.
+function telinhas() {
+  $$('[data-telinha]').forEach((t) => {
+    const conv = t.querySelector('[data-conversa]');
+    const msgs = $$('.msg', t);
+    const dias = $$('.celular__dia', t);
+    const data = t.querySelector('[data-celular-data]');
+    const dig = t.querySelector('[data-celular-digitando]');
+    if (reduzido || !msgs.length) return;
+    gsap.set([...msgs, ...dias], { opacity: 0 });
+    gsap.set(dig, { opacity: 0 });
+    aoVer(t, () => {
+        const tl = gsap.timeline();
+        msgs.forEach((m, i) => {
+          const ela = m.classList.contains('msg--ela');
+          const dia = m.previousElementSibling?.classList.contains('celular__dia') ? m.previousElementSibling : null;
+          if (dia) tl.to(dia, { opacity: 1, duration: 0.2 });
+          if (!i || m.classList.contains('msg--ini')) {
+            const p = digitando(m);
+            tl.add(() => { p.style.top = `${m.offsetTop}px`; conv.append(p); })
+              .fromTo(p, { opacity: 0 }, { opacity: 1, duration: 0.15 });
+            if (ela) tl.to(data, { opacity: 0, duration: 0.12 }, '<').to(dig, { opacity: 1, duration: 0.12 }, '<');
+            tl.to(p, { opacity: 0, duration: 0.1, delay: Math.min(0.75, 0.3 + m.textContent.length * 0.008), onComplete: () => p.remove() });
+            if (ela) tl.to(dig, { opacity: 0, duration: 0.1 }, '<').to(data, { opacity: 1, duration: 0.1 }, '<');
+          }
+          tl.fromTo(m, { opacity: 0, y: 10, scale: 0.94, transformOrigin: ela ? '0% 100%' : '100% 100%' },
+            { opacity: 1, y: 0, scale: 1, duration: 0.32, ease: 'power3.out' })
+            .to({}, { duration: 0.15 });
+        });
+    }, '0px 0px -25% 0px');
   });
 }
 
@@ -606,10 +651,10 @@ function virada() {
 function carta() {
   $$('[data-linhas]').forEach((p) => {
     if (reduzido) { gsap.from(p, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: p, start: 'top 85%' } }); return; }
-    const split = SplitText.create(p, { type: 'lines', linesClass: 'linha' });
-    split.lines.forEach((l) => {
-      gsap.fromTo(l, { opacity: 0.12 }, { opacity: 1, ease: 'none', scrollTrigger: { trigger: l, start: 'top 85%', end: 'top 60%', scrub: true } });
-    });
+    // As linhas acendem uma a uma com a rolagem: um gatilho por parágrafo, não por linha.
+    const linhas = SplitText.create(p, { type: 'lines', linesClass: 'linha' }).lines;
+    gsap.timeline({ scrollTrigger: { trigger: p, start: 'top 85%', end: 'bottom 60%', scrub: true } })
+      .fromTo(linhas, { opacity: 0.12 }, { opacity: 1, ease: 'none', duration: 1, stagger: 1 });
   });
 }
 
@@ -655,10 +700,8 @@ function cabecas() {
   });
   $$('[data-cap-linha]').forEach((l) => {
     if (reduzido) { gsap.set(l, { scaleX: 1 }); return; }
-    gsap.fromTo(l, { scaleX: 0 }, {
-      scaleX: 1, ease: 'none',
-      scrollTrigger: { trigger: l, start: 'top 90%', end: 'top 55%', scrub: 0.6 },
-    });
+    gsap.set(l, { scaleX: 0 });
+    aoVer(l, () => gsap.to(l, { scaleX: 1, duration: 1.2, ease: 'power2.inOut' }));
   });
 }
 
@@ -722,17 +765,18 @@ function mapa() {
     const L = cam.getTotalLength();
     gsap.set(cam, { strokeDasharray: L, strokeDashoffset: L });
     gsap.to(cam, { strokeDashoffset: 0, ease: 'none', scrollTrigger: { trigger: m, start: 'top 70%', end: 'bottom 70%', scrub: 0.6 } });
-    pontos.forEach((pt) => {
-      gsap.fromTo(pt, { opacity: 0.25, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.4, ease: 'power2.out',
-        scrollTrigger: { trigger: pt, start: 'top 70%', toggleActions: 'play none none reverse' } });
-    });
+    gsap.set(pontos, { opacity: 0.25, scale: 0.85 });
+    pontos.forEach((pt) => aoVer(pt, () => gsap.to(pt, { opacity: 1, scale: 1, duration: 0.4, ease: 'power2.out' }), '0px 0px -30% 0px'));
   });
 }
 
 let UI_DICA = '';
 export function iniciarEfeitos({ barra, abaixar, trilha, ui = {} }) {
   UI_DICA = ui.continua || '';
-  mapa();
+  // Cada gatilho novo mede a página inteira na hora em que nasce. Com a história
+  // escondida essas medidas custam quase nada; depois mede tudo uma vez só.
+  const historia = document.getElementById('historia');
+  historia.style.display = 'none';
   fundo();
   cabecas();
   faixas();
@@ -751,23 +795,26 @@ export function iniciarEfeitos({ barra, abaixar, trilha, ui = {} }) {
   galeria();
   muito();
   ponto();
-  elaDiz();
+
   numeros();
   painel();
   poente(trilha);
   virada();
-  carta();
   fotos();
+  telinhas();
   conversas();
   progresso(barra);
+  historia.style.display = '';
+  // Estes precisam da página visível: a carta quebra por linha e o mapa mede o caminho.
+  carta();
+  mapa();
   // Os gatilhos foram criados por tipo, não na ordem da página: reordena antes de medir.
   ScrollTrigger.sort();
   ScrollTrigger.refresh();
-  document.fonts.ready.then(() => ScrollTrigger.refresh());
+  if (document.fonts.status !== 'loaded') document.fonts.ready.then(() => ScrollTrigger.refresh());
 
   // Se qualquer coisa mudar a altura da história depois (foto, fonte, vídeo),
   // recalcula todas as posições, senão textos podem ficar sem aparecer.
-  const historia = document.getElementById('historia');
   let altura = historia.offsetHeight;
   let pendente = false;
   let ultimaRolagem = 0;

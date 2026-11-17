@@ -15,6 +15,11 @@ const msg = document.getElementById('cadeado-msg');
 const entrar = document.getElementById('cadeado-entrar');
 const app = document.getElementById('app');
 
+// As fontes da história começam a baixar já na tela de senha. Se chegarem depois
+// da página montada, tudo teria que ser medido de novo (e isso engasga).
+const FONTES = ['400 1em "Bodoni Moda"', 'italic 500 1em "Bodoni Moda"', '400 1em Figtree', '500 1em Figtree', '600 1em Figtree', '400 1em "Reenie Beanie"'];
+const fontesProntas = Promise.all(FONTES.map((f) => document.fonts.load(f).catch(() => null)));
+
 /* ---------- tela de senha ---------- */
 
 // A senha vale do jeito que ela digitar: sem diferença de maiúscula, acento ou espaço.
@@ -83,16 +88,21 @@ async function abrirSite(dados, comMusica) {
   ligarSegredo(segredo, dados.config.ui || {});
   ligarDicas();
 
-  await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 60); });
-  cadeado.classList.add('saindo');
-  setTimeout(() => cadeado.remove(), reduzido ? 0 : 320);
-  document.documentElement.classList.add('aberto');
+  // Monta todas as animações ainda atrás da tela de senha (o botão continua girando),
+  // e só depois abre a cortina: assim nada engasga na frente dela.
+  entrar.classList.add('carregando');
+  await Promise.race([fontesProntas, new Promise((r) => setTimeout(r, 2500))]);
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   window.scrollTo(0, 0);
-
+  document.documentElement.classList.add('aberto');
   iniciarRolagem();
   iniciarEfeitos({ barra, abaixar: audio.abaixar, trilha: { final: audio.trilhaFinal, nivel: audio.definirNivel }, ui: dados.config.ui || {} });
   animarAbertura();
   ligarNavegacao(barra, dados.config.ui || {}, comMusica);
+
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  cadeado.classList.add('saindo');
+  setTimeout(() => cadeado.remove(), reduzido ? 0 : 600);
 }
 
 /* ---------- navegação: continuar, índice e "ler de novo" ---------- */

@@ -42,8 +42,16 @@ let CONFIG = {};
 
 /* ---------- peças reutilizáveis ---------- */
 
-function mensagem(m, extra = '', comHora = true) {
-  const hora = comHora && m.quando && h('span', { class: 'msg__hora' }, m.quando);
+// "06/08, 22:19" -> dia "06/08" e hora "22:19". Dentro do celular o dia vira uma
+// etiqueta no meio da conversa (como no Zap) e o balão mostra só a hora.
+const dataDe = (q) => (/^(\d\d\/\d\d)/.exec(q || '') || [])[1] || null;
+const horaDe = (q) => (/(\d\d:\d\d)$/.exec(q || '') || [])[1] || q;
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const porExtenso = (d) => (d ? `${Number(d.slice(0, 2))} de ${MESES[Number(d.slice(3, 5)) - 1]}` : '');
+
+function mensagem(m, extra = '', comHora = true, soHora = false) {
+  const q = soHora ? horaDe(m.quando) : m.quando;
+  const hora = comHora && q && h('span', { class: 'msg__hora' }, q);
   if (m.tipo === 'sistema') {
     return h('div', { class: `msg msg--sistema ${extra}` },
       h('span', { class: 'msg__ligacao' }, svg('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 3 16.5zM15 10.5l6-3.5v10l-6-3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')),
@@ -58,17 +66,21 @@ function mensagem(m, extra = '', comHora = true) {
 
 // Mensagens seguidas da mesma pessoa viram um grupo, como no Insta/Zap:
 // cantos "colados" e horário só quando o grupo acaba ou o minuto muda.
-export function conversa(lista = [], extra = '') {
+export function conversa(lista = [], extra = '', noCelular = false) {
   const msgs = lista.filter(Boolean);
   if (!msgs.length) return null;
   const autor = (m) => (m.tipo === 'sistema' ? 'sistema' : m.de);
+  // Mudou o dia: a sequência recomeça (etiqueta de data no celular).
+  const dia = (m) => (noCelular ? dataDe(m.quando) : null);
   return h('div', { class: `conversa ${extra}`, 'data-conversa': '' }, msgs.map((m, i) => {
     const ant = msgs[i - 1];
     const prox = msgs[i + 1];
-    const ini = !ant || autor(ant) !== autor(m);
-    const fim = !prox || autor(prox) !== autor(m);
+    const novoDia = dia(m) && (!ant || dia(ant) !== dia(m));
+    const ini = !ant || autor(ant) !== autor(m) || novoDia;
+    const fim = !prox || autor(prox) !== autor(m) || (dia(prox) && dia(prox) !== dia(m));
     const cls = [ini && 'msg--ini', fim && 'msg--fim', m.destaque && 'msg--grande', m.explode && 'msg--explode'].filter(Boolean).join(' ');
-    return mensagem(m, cls, fim || prox.quando !== m.quando);
+    const balao = mensagem(m, cls, fim || prox.quando !== m.quando, noCelular);
+    return novoDia ? [h('p', { class: 'celular__dia' }, h('span', {}, dia(m))), balao] : balao;
   }));
 }
 
@@ -95,24 +107,48 @@ export function foto(f, extra = '') {
     f.legenda && h('figcaption', { class: 'foto__legenda' }, f.legenda));
 }
 
+// Nome do contato no topo do celular: segue o último celular da história
+// (no começo era "Mari" no Insta; depois virou "amor ♥️" no Zap).
+let contato = '';
+
+function topoCelular(nome, quando) {
+  return h('div', { class: 'celular__topo' },
+    h('span', { class: 'celular__avatar', 'aria-hidden': 'true' }, [...nome][0]),
+    h('div', { class: 'celular__quem' },
+      h('p', { class: 'celular__nome' }, nome),
+      h('p', { class: 'celular__status' },
+        h('span', { 'data-celular-data': '' }, quando),
+        h('span', { class: 'celular__digitando', 'data-celular-digitando': '', 'aria-hidden': 'true' }, UI.digitando))));
+}
+const barraCelular = () => h('div', { class: 'celular__barra', 'aria-hidden': 'true' }, h('span'), h('i'));
+
 // Conversa "revivida": um celular estilizado onde as mensagens chegam com a rolagem.
-function celular(c, { antes, trilha } = {}) {
+function celular(c, { antes, trilha, ritmo, semDia } = {}) {
   if (!c) return null;
+  contato = c.nome || contato;
   const explode = c.mensagens.find((m) => m.explode);
-  return h('div', { class: 'celular-palco', 'data-celular': '', 'data-trilha': trilha },
+  return h('div', { class: 'celular-palco', 'data-celular': '', 'data-trilha': trilha, 'data-ritmo': ritmo },
     h('div', { class: 'celular' },
-      h('div', { class: 'celular__topo' },
-        h('span', { class: 'celular__avatar', 'aria-hidden': 'true' }, [...c.nome][0]),
-        h('div', { class: 'celular__quem' },
-          h('p', { class: 'celular__nome' }, c.nome),
-          h('p', { class: 'celular__status' },
-            h('span', { 'data-celular-data': '' }, c.quando),
-            h('span', { class: 'celular__digitando', 'data-celular-digitando': '', 'aria-hidden': 'true' }, UI.digitando)))),
+      topoCelular(contato, c.quando),
       h('div', { class: 'celular__tela', 'data-celular-tela': '' },
-        h('div', { class: 'celular__lista', 'data-celular-lista': '' }, antes, conversa(c.mensagens, 'conversa--celular'))),
-      h('div', { class: 'celular__barra', 'aria-hidden': 'true' }, h('span'), h('i'))),
+        h('div', { class: 'celular__lista', 'data-celular-lista': '' }, antes, conversa(c.mensagens, 'conversa--celular', !semDia))),
+      barraCelular()),
     explode && h('p', { class: 'celular__explode', 'data-celular-explode': '', 'aria-hidden': 'true' }, explode.texto),
     c.fecho && h('p', { class: 'celular__fecho manuscrito-curto', 'data-celular-fecho': '' }, c.fecho));
+}
+
+// Toda conversa da história aparece num celular. As longas ficam presas na tela
+// e chegam com a rolagem (como a primeira); as curtas tocam sozinhas ao aparecer.
+function telefone(lista, extra = '') {
+  const msgs = (lista || []).filter(Boolean);
+  if (!msgs.length) return null;
+  const quando = porExtenso(dataDe(msgs[0].quando));
+  if (msgs.length >= 6) return celular({ nome: contato, quando, mensagens: msgs });
+  return h('div', { class: `telinha ${extra}`, 'data-telinha': '' },
+    h('div', { class: 'celular celular--mini' },
+      topoCelular(contato, quando),
+      h('div', { class: 'celular__tela' }, h('div', { class: 'celular__lista' }, conversa(msgs, 'conversa--celular', true))),
+      barraCelular()));
 }
 
 function fotoOuReserva(f, extra = '') {
@@ -143,7 +179,7 @@ const momentos = {
       paragrafos(s.texto),
       manuscrito(s.manuscrito, s.manuscrito_nota),
       s.antes_mensagens && paragrafos([s.antes_mensagens]),
-      conversa(s.mensagens),
+      telefone(s.mensagens),
       h('div', { class: 'dupla' }, (s.fotos || []).map((f, i) => foto(f, i ? 'foto--desce' : ''))),
     ];
   },
@@ -162,14 +198,14 @@ const momentos = {
             h('img', { 'data-lazy': '', midia: st.m, alt: st.legenda, decoding: 'async' })),
           h('figcaption', { class: 'foto__legenda' }, st.legenda)),
         celular(s.celular, { antes: resposta })),
-      (s.blocos || []).map((b) => h('div', { class: 'bloco' }, paragrafos([b.texto]), conversa(b.mensagens))),
+      (s.blocos || []).map((b) => h('div', { class: 'bloco' }, paragrafos([b.texto]), telefone(b.mensagens))),
     ];
   },
 
   beijo(s) {
     return [
       paragrafos(s.texto),
-      s.comedia && h('div', { class: 'bloco bloco--comedia' }, paragrafos([s.comedia.texto]), conversa(s.comedia.mensagens)),
+      s.comedia && h('div', { class: 'bloco bloco--comedia' }, paragrafos([s.comedia.texto]), telefone(s.comedia.mensagens)),
       h('div', { class: 'beijo-palco', 'data-beijo': '' },
         h('div', { class: 'beijo-mascara', 'data-beijo-mascara': '' },
           h('video', { 'data-lazy': '', midia: s.video.m, muted: true, playsinline: true, loop: true, preload: 'none',
@@ -178,7 +214,7 @@ const momentos = {
         h('button', { class: 'icone-botao icone-botao--video', type: 'button', 'data-som-video': '', 'aria-label': 'Ligar o som do vídeo', 'data-dica': 'Ligar o som do vídeo' }, icone('somOff'))),
       paragrafos([s.depois]),
       celular(s.celular),
-      s.fecho && h('div', { class: 'fecho' }, s.fecho.texto && paragrafos([s.fecho.texto]), conversa([s.fecho.mensagem]), manuscrito(s.fecho.manuscrito)),
+      s.fecho && h('div', { class: 'fecho' }, s.fecho.texto && paragrafos([s.fecho.texto]), telefone([s.fecho.mensagem]), manuscrito(s.fecho.manuscrito)),
     ];
   },
 
@@ -189,7 +225,7 @@ const momentos = {
       h('div', { class: 'adesivo-palco', 'data-adesivo': '' },
         foto(f),
         h('div', { class: 'adesivo', 'data-adesivo-circulo': '', 'aria-hidden': 'true' }, h('span', {}, s.adesivo))),
-      conversa(s.mensagens),
+      telefone(s.mensagens),
     ];
   },
 
@@ -205,7 +241,7 @@ const momentos = {
         h('div', { class: 'placar__linha' }, h('span', { class: 'placar__time' }, p.casa), rolo(p.gols_casa)),
         h('div', { class: 'placar__linha' }, h('span', { class: 'placar__time' }, p.fora), rolo(p.gols_fora))),
       h('p', { class: 'placar__legenda', 'data-revela-texto': '' }, s.placar.legenda),
-      conversa(s.mensagens),
+      telefone(s.mensagens),
     ];
   },
 
@@ -216,7 +252,7 @@ const momentos = {
         s.lados.map((l, i) => h('div', { class: `lado lado--${i ? 'b' : 'a'}`, 'data-lado': '' },
           h('p', { class: 'lado__data' }, l.data),
           h('p', { class: 'prosa' }, l.texto),
-          conversa(l.mensagens)))),
+          telefone(l.mensagens)))),
       (s.fotos || []).map((f) => foto(f, 'foto--larga')),
     ];
   },
@@ -226,7 +262,7 @@ const momentos = {
       paragrafos(s.texto),
       celular(s.celular),
       s.depois && h('div', { class: 'bloco' }, paragrafos([s.depois_texto]), manuscrito(s.depois)),
-      s.ritual && h('div', { class: 'bloco ritual' }, paragrafos([s.ritual.texto]), conversa(s.ritual.mensagens, 'conversa--ritual')),
+      s.ritual && h('div', { class: 'bloco ritual' }, paragrafos([s.ritual.texto]), telefone(s.ritual.mensagens, 'telinha--ritual')),
     ];
   },
 
@@ -251,7 +287,7 @@ const momentos = {
           conversa([mu.antes], 'conversa--fixa'),
           h('div', { class: 'muito-parede', 'data-muito-parede': '', 'aria-hidden': 'true' }),
           h('p', { class: 'muito-mais', 'data-muito-mais': '' }, h('span', { class: 'sr' }, `você: ${mu.palavra} ${mu.palavra} ${mu.palavra}… `), mu.final.texto)),
-        conversa([mu.rodape]),
+        telefone([mu.rodape]),
         h('template', { 'data-muito-palavra': mu.palavra })),
     ];
   },
@@ -264,8 +300,8 @@ const momentos = {
       paragrafos(s.texto),
       h('div', { class: 'painel', 'data-painel': '' },
         linha('de', s.painel.de), linha('para', s.painel.para), linha('quando', s.painel.quando)),
-      conversa(s.mensagens),
-      s.fecho_mensagens && h('div', { class: 'bloco' }, paragrafos([s.fecho_texto]), conversa(s.fecho_mensagens)),
+      telefone(s.mensagens),
+      s.fecho_mensagens && h('div', { class: 'bloco' }, paragrafos([s.fecho_texto]), telefone(s.fecho_mensagens)),
     ];
   },
 
@@ -417,17 +453,21 @@ const secoes = {
         h('span', { class: 'ponto-relogio__de', 'data-ponto-de': '' }, s.relogio_de),
         h('span', { class: 'ponto-relogio__para', 'data-ponto-para': '' }, s.relogio_para)),
       paragrafos([s.texto]),
-      conversa(s.mensagens));
+      telefone(s.mensagens));
   },
 
+  // As frases dela e as minhas, uma de cada, no mesmo celular, com dia e hora.
   'ela-diz'(s) {
+    const dela = s.mensagens || [];
+    const minhas = s.ele_mensagens || [];
+    const lista = [];
+    for (let i = 0; i < Math.max(dela.length, minhas.length); i++) {
+      [dela[i], minhas[i]].forEach((m) => m && lista.push({ ...m, quando: m.hora ? `${m.quando} · ${m.hora}` : m.quando }));
+    }
     return h('section', { class: 'secao interludio ela-diz', 'data-tema': s.tema, 'data-indice': s.titulo },
       h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
-      h('div', { class: 'ela-diz__lista', 'data-ela-diz': '' }, s.mensagens.map((m) => mensagem(m, 'msg--ini msg--fim'))),
-      s.ele_mensagens && s.ele_mensagens.length && [
-        h('h3', { class: 'ela-diz__subtitulo', 'data-split': '' }, s.ele_titulo),
-        h('div', { class: 'ela-diz__lista ela-diz__lista--ele', 'data-ela-diz': '' }, s.ele_mensagens.map((m) => mensagem(m, 'msg--ini msg--fim'))),
-      ],
+      s.ele_titulo && h('p', { class: 'ela-diz__subtitulo', 'data-revela-texto': '' }, s.ele_titulo),
+      celular({ nome: s.contato || contato, quando: s.status || '', mensagens: lista }, { semDia: true, ritmo: '0.5' }),
       h('p', { class: 'ela-diz__fecho manuscrito-curto', 'data-revela-texto': '' }, s.fecho));
   },
 
@@ -494,6 +534,7 @@ const secoes = {
 export function montarSite(dados) {
   CONFIG = dados.config || {};
   UI = CONFIG.ui || {};
+  contato = (dados.secoes.find((s) => s.celular) || {}).celular?.nome || '';
   const frag = document.createDocumentFragment();
   for (const s of dados.secoes) {
     const fn = secoes[s.tipo];

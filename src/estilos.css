@@ -871,3 +871,25 @@ html.travado, html.travado body { overflow: hidden; }
 
 /* Final */
 .final__acoes { display: flex; flex-direction: column; align-items: center; gap: var(--e3); }
+
+/* ---------- toda conversa num celular ---------- */
+/* Etiqueta de dia no meio da conversa, como no Zap. */
+.celular__dia { align-self: center; margin: var(--e3) 0 var(--e1); }
+.celular__dia span {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: var(--t-meta); font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+  color: var(--texto-2); background: rgba(251, 241, 242, 0.08);
+}
+.conversa--celular > .celular__dia:first-child { margin-top: 0; }
+/* Celular curto: do tamanho da conversa, sem prender a tela. */
+.telinha { display: flex; justify-content: center; margin-block: var(--e8); }
+.celular--mini { flex: none; max-height: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 24px 60px -30px rgba(0, 0, 0, 0.8); }
+.celular--mini .celular__tela { overflow: visible; }
+.celular--mini .celular__lista { padding-bottom: var(--e3); }
+.celular--mini .celular__barra span { height: 28px; }
+.celular--mini .celular__barra i { width: 28px; height: 28px; }
+.lado .telinha, .bloco .telinha { margin-block: var(--e4) 0; }
+/* Mensagens fofas: um celular só, uma dela e uma minha. */
+.ela-diz .celular-palco { margin-block: var(--e4) 0; }
+.ela-diz .msg { font-size: var(--t-lead); }
+.ela-diz__subtitulo { text-align: center; margin: var(--e3) 0 0; font-size: clamp(1.25rem, 5.5vw, 1.75rem); color: var(--texto-2); }
