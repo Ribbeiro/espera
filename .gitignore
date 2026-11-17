@@ -12,3 +12,6 @@ Thumbs.db
 *.log
 qr-celular.png
 ROTEIRO-*.md
+
+# Ferramentas locais (transcrição/edição de vídeo)
+.ferramentas/

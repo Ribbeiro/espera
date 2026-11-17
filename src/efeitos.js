@@ -39,6 +39,19 @@ export function iniciarRolagem() {
   return lenis;
 }
 
+// Leva a página até y (instantâneo), com ou sem a rolagem suave ligada.
+export function irPara(y, suave = false) {
+  // A altura da página muda quando as telas presas são montadas: atualiza antes de ir.
+  if (lenis) { lenis.resize(); lenis.scrollTo(y, { immediate: !suave, force: true, duration: 1.6 }); }
+  else window.scrollTo({ top: y, behavior: suave ? 'smooth' : 'auto' });
+}
+
+// Avisa quando ela chega no fim da história (pra liberar o índice de capítulos).
+export function aoChegarNoFim(cb) {
+  const fim = document.querySelector('.final');
+  if (fim) ScrollTrigger.create({ trigger: fim, start: 'top 80%', once: true, onEnter: cb });
+}
+
 export function pararRolagem() {
   const y = window.scrollY;
   if (lenis) lenis.stop();
@@ -259,10 +272,21 @@ function celulares(trilha) {
     else tl.to({}, { duration: 0.7 });
 
     const nivel = palco.dataset.trilha;
+    // Na primeira tela presa, uma dica discreta pra ela saber que é só continuar descendo.
+    let dica = null;
+    if (palco === document.querySelector('[data-celular]') && UI_DICA) {
+      dica = document.createElement('p');
+      dica.className = 'dica-rolagem';
+      dica.setAttribute('aria-hidden', 'true');
+      dica.textContent = UI_DICA;
+      palco.append(dica);
+      gsap.set(dica, { opacity: 0 });
+    }
     ScrollTrigger.create({
       animation: tl, trigger: palco, start: 'top top', end: `+=${Math.round(tl.duration() * 20)}%`,
       pin: true, scrub: 0.5, invalidateOnRefresh: true,
       onToggle: (st) => { if (nivel && trilha) trilha.nivel(st.isActive ? nivel : 'normal'); },
+      onUpdate: (st) => { if (dica) gsap.to(dica, { opacity: st.progress > 0.002 && st.progress < 0.06 ? 1 : 0, duration: 0.3, overwrite: 'auto' }); },
     });
   });
 }
@@ -665,7 +689,7 @@ function amo() {
     gsap.set(itens[0], { yPercent: 0, opacity: 1 });
     const tl = gsap.timeline({
       scrollTrigger: {
-        trigger: palco, start: 'top top', end: `+=${itens.length * 40}%`, pin: true, scrub: 0.5,
+        trigger: palco, start: 'top top', end: `+=${itens.length * 28}%`, pin: true, scrub: 0.5,
         onUpdate: (st) => { n.textContent = String(Math.min(itens.length, 1 + Math.floor(st.progress * itens.length))); },
       },
     });
@@ -680,7 +704,35 @@ function amo() {
   });
 }
 
-export function iniciarEfeitos({ barra, abaixar, trilha }) {
+// Mapa dos lugares: o caminho se desenha com a rolagem e cada ponto acende quando o traço chega.
+function mapa() {
+  $$('[data-mapa]').forEach((m) => {
+    const cam = m.querySelector('[data-mapa-caminho]');
+    const pontos = $$('[data-mapa-ponto]', m);
+    pontos.forEach((pt) => {
+      const b = pt.querySelector('button');
+      const t = pt.querySelector('.mapa__texto');
+      b.addEventListener('click', () => {
+        const abrir = b.getAttribute('aria-expanded') !== 'true';
+        pontos.forEach((o) => { o.querySelector('button').setAttribute('aria-expanded', 'false'); o.querySelector('.mapa__texto').hidden = true; o.classList.remove('aberto'); });
+        b.setAttribute('aria-expanded', String(abrir)); t.hidden = !abrir; pt.classList.toggle('aberto', abrir);
+      });
+    });
+    if (reduzido) return;
+    const L = cam.getTotalLength();
+    gsap.set(cam, { strokeDasharray: L, strokeDashoffset: L });
+    gsap.to(cam, { strokeDashoffset: 0, ease: 'none', scrollTrigger: { trigger: m, start: 'top 70%', end: 'bottom 70%', scrub: 0.6 } });
+    pontos.forEach((pt) => {
+      gsap.fromTo(pt, { opacity: 0.25, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.4, ease: 'power2.out',
+        scrollTrigger: { trigger: pt, start: 'top 70%', toggleActions: 'play none none reverse' } });
+    });
+  });
+}
+
+let UI_DICA = '';
+export function iniciarEfeitos({ barra, abaixar, trilha, ui = {} }) {
+  UI_DICA = ui.continua || '';
+  mapa();
   fundo();
   cabecas();
   faixas();

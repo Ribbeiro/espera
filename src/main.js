@@ -4,7 +4,7 @@ import { entrarComSenha, entrarComSessao, urlDaMidia } from './cripto.js';
 import { montarSite, montarSegredo, h, icone } from './render.js';
 import * as audio from './audio.js';
 import {
-  iniciarRolagem, animarAbertura, iniciarEfeitos, definirIconeSom, pararRolagem, voltarRolagem, reduzido,
+  iniciarRolagem, animarAbertura, iniciarEfeitos, definirIconeSom, pararRolagem, voltarRolagem, reduzido, irPara, aoChegarNoFim,
 } from './efeitos.js';
 
 const cadeado = document.getElementById('cadeado');
@@ -90,8 +90,76 @@ async function abrirSite(dados, comMusica) {
   window.scrollTo(0, 0);
 
   iniciarRolagem();
-  iniciarEfeitos({ barra, abaixar: audio.abaixar, trilha: { final: audio.trilhaFinal, nivel: audio.definirNivel } });
+  iniciarEfeitos({ barra, abaixar: audio.abaixar, trilha: { final: audio.trilhaFinal, nivel: audio.definirNivel }, ui: dados.config.ui || {} });
   animarAbertura();
+  ligarNavegacao(barra, dados.config.ui || {}, comMusica);
+}
+
+/* ---------- navegação: continuar, índice e "ler de novo" ---------- */
+
+const CH_POS = 'lm-pos';
+const CH_FIM = 'lm-fim';
+const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const gravar = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
+
+function ligarNavegacao(barra, ui, comMusica) {
+  // Guarda onde ela está, pra poder continuar depois.
+  let ultimo = 0;
+  window.addEventListener('scroll', () => {
+    const agora = performance.now();
+    if (agora - ultimo < 1000) return;
+    ultimo = agora;
+    gravar(CH_POS, String(Math.round(window.scrollY)));
+  }, { passive: true });
+
+  // Voltando no meio da história: pergunta se quer continuar (e o toque já liga a música).
+  const pos = Number(ler(CH_POS) || 0);
+  const altura = document.documentElement.scrollHeight;
+  if (pos > 1500 && pos < altura - window.innerHeight * 1.5) {
+    const sim = h('button', { class: 'botao', type: 'button' }, ui.continuar_sim);
+    const nao = h('button', { class: 'botao botao--leve', type: 'button' }, ui.continuar_nao);
+    const cartao = h('div', { class: 'continuar', role: 'dialog', 'aria-label': ui.continuar_pergunta },
+      h('p', { class: 'continuar__pergunta' }, ui.continuar_pergunta), h('div', { class: 'continuar__acoes' }, sim, nao));
+    document.body.append(cartao);
+    requestAnimationFrame(() => cartao.classList.add('visivel'));
+    const fechar = (continuar) => {
+      if (!comMusica) { audio.destravar(); audio.tocar(); }
+      cartao.classList.remove('visivel');
+      setTimeout(() => cartao.remove(), 320);
+      if (continuar) irPara(pos);
+    };
+    sim.addEventListener('click', () => fechar(true));
+    nao.addEventListener('click', () => fechar(false));
+    sim.focus({ preventScroll: true });
+  }
+
+  // "Ler tudo de novo"
+  document.querySelectorAll('[data-ler-de-novo]').forEach((b) => b.addEventListener('click', () => irPara(0, true)));
+
+  // Índice dos capítulos: liberado depois que ela chega no fim uma vez.
+  const itens = [...document.querySelectorAll('[data-indice]')].filter((el) => el.dataset.indice);
+  const lista = h('ul', { class: 'indice__lista' }, itens.map((el) => h('li', {},
+    h('button', { class: 'indice__item', type: 'button', onclick: () => { dlg.close(); setTimeout(() => irPara(el.getBoundingClientRect().top + window.scrollY - 8), 60); } },
+      el.dataset.indice))));
+  const fecharBtn = h('button', { class: 'icone-botao indice__fechar', type: 'button', 'aria-label': ui.indice_fechar, 'data-dica': ui.indice_fechar }, icone('fechar'));
+  const dlg = h('dialog', { class: 'indice', 'aria-labelledby': 'indice-titulo' },
+    h('div', { class: 'indice__caixa', 'data-lenis-prevent': '' },
+      fecharBtn, h('h2', { class: 'indice__titulo', id: 'indice-titulo' }, ui.indice_titulo), lista,
+      h('p', { class: 'indice__dica' }, ui.indice_dica)));
+  document.body.append(dlg);
+  let posAntes = 0;
+  fecharBtn.addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener('close', () => { document.documentElement.classList.remove('travado'); voltarRolagem(); });
+  const abrirIndice = () => { posAntes = pararRolagem(); document.documentElement.classList.add('travado'); dlg.showModal(); };
+  const liberar = () => {
+    if (barra.querySelector('.progresso__abrir')) return;
+    barra.classList.add('progresso--indice');
+    barra.removeAttribute('aria-hidden');
+    barra.append(h('button', { class: 'progresso__abrir', type: 'button', 'aria-label': ui.indice_abrir, onclick: abrirIndice }));
+  };
+  if (ler(CH_FIM)) liberar();
+  aoChegarNoFim(() => { gravar(CH_FIM, '1'); liberar(); });
 }
 
 /* ---------- mídia sob demanda ---------- */

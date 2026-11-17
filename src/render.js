@@ -38,6 +38,7 @@ const quem = (de) => (de === 'ela' ? 'você' : 'eu');
 
 // Textos de interface, lidos do JSON (config.ui).
 let UI = {};
+let CONFIG = {};
 
 /* ---------- peças reutilizáveis ---------- */
 
@@ -326,8 +327,58 @@ const secoes = {
 
   capitulo(s) {
     const corpo = (momentos[s.momento] || momentos.memoria)(s);
-    return h('section', { class: `secao capitulo momento--${s.momento}`, 'data-tema': s.tema, 'data-seg': s.rotulo },
+    return h('section', { class: `secao capitulo momento--${s.momento}`, 'data-tema': s.tema, 'data-seg': s.rotulo, 'data-indice': `${s.rotulo}: ${s.titulo}` },
       cabeca(s), corpo);
+  },
+
+  // Mapa desenhado (sem endereço nenhum): um caminho que liga os lugares da história.
+  lugares(s) {
+    const n = s.pontos.length;
+    const passo = 110, margem = 60, alt = margem * 2 + (n - 1) * passo;
+    const pts = s.pontos.map((_, i) => [i % 2 ? 290 : 110, margem + i * passo]);
+    let d = `M ${pts[0][0]} ${pts[0][1]}`;
+    for (let i = 1; i < n; i++) {
+      const [x0, y0] = pts[i - 1]; const [x1, y1] = pts[i]; const m = (y1 - y0) / 2;
+      d += ` C ${x0} ${y0 + m}, ${x1} ${y1 - m}, ${x1} ${y1}`;
+    }
+    const t = document.createElement('template');
+    t.innerHTML = `<svg class="mapa__svg" viewBox="0 0 400 ${alt}" preserveAspectRatio="none" aria-hidden="true">
+      <path class="mapa__trilha" d="${d}"/><path class="mapa__caminho" data-mapa-caminho d="${d}"/></svg>`;
+    return h('section', { class: 'secao interludio lugares', 'data-tema': s.tema, 'data-indice': s.titulo },
+      h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
+      s.subtitulo && h('p', { class: 'cap-data' }, s.subtitulo),
+      h('div', { class: 'mapa', 'data-mapa': '', style: `aspect-ratio:400/${alt}` }, t.content.firstElementChild,
+        s.pontos.map((pt, i) => h('div', { class: `mapa__ponto mapa__ponto--${i % 2 ? 'dir' : 'esq'}`, 'data-mapa-ponto': '',
+          style: `left:${(pts[i][0] / 400) * 100}%;top:${(pts[i][1] / alt) * 100}%` },
+          h('button', { class: 'mapa__botao', type: 'button', 'aria-expanded': 'false' },
+            h('span', { class: 'mapa__marca', 'aria-hidden': 'true' }),
+            h('span', { class: 'mapa__nome' }, pt.nome),
+            h('span', { class: 'mapa__data' }, pt.data)),
+          h('p', { class: 'mapa__texto', hidden: true }, pt.texto)))));
+  },
+
+  // As músicas da história, cada uma com a lembrança e um atalho pro Spotify.
+  trilha(s) {
+    return h('section', { class: 'secao interludio trilha', 'data-tema': s.tema, 'data-indice': s.titulo },
+      h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
+      h('ol', { class: 'trilha__lista' }, s.musicas.map((m, i) => h('li', { class: 'trilha__item', 'data-revela-texto': '' },
+        h('span', { class: 'trilha__num', 'aria-hidden': 'true' }, String(i + 1).padStart(2, '0')),
+        h('div', { class: 'trilha__corpo' },
+          h('p', { class: 'trilha__titulo' }, m.titulo),
+          h('p', { class: 'trilha__artista' }, m.artista),
+          h('p', { class: 'trilha__texto' }, m.texto),
+          h('a', { class: 'trilha__ouvir', target: '_blank', rel: 'noopener',
+            href: `https://open.spotify.com/search/${encodeURIComponent(`${m.titulo} ${m.artista}`)}` }, UI.ouvir))))));
+  },
+
+  // As fotos do dia do pedido. Só aparece quando existir pelo menos uma.
+  dia(s) {
+    const fotos = (s.fotos || []).filter((f) => f.m);
+    if (!fotos.length) return null;
+    return h('section', { class: 'secao interludio dia', 'data-tema': s.tema, 'data-indice': s.titulo },
+      h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
+      s.texto && h('p', { class: 'prosa', 'data-revela-texto': '' }, s.texto),
+      h('div', { class: 'dia__grade' }, fotos.map((f, i) => foto(f, i % 3 === 0 ? 'foto--larga' : ''))));
   },
 
   // Tela quase vazia entre os atos, com uma frase só.
@@ -347,7 +398,7 @@ const secoes = {
 
   // "Eu amo…" com as coisas trocando uma por uma, presa na tela.
   amo(s) {
-    return h('section', { class: 'secao interludio amo', 'data-tema': s.tema },
+    return h('section', { class: 'secao interludio amo', 'data-tema': s.tema, 'data-indice': s.titulo },
       h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
       h('div', { class: 'amo-palco', 'data-amo': '' },
         h('p', { class: 'amo__prefixo' }, s.prefixo),
@@ -358,7 +409,7 @@ const secoes = {
   },
 
   ponto(s) {
-    return h('section', { class: 'secao interludio ponto', 'data-tema': s.tema },
+    return h('section', { class: 'secao interludio ponto', 'data-tema': s.tema, 'data-indice': s.titulo },
       h('div', { class: 'ponto-placa', 'aria-hidden': 'true' },
         svg('<rect x="4" y="5" width="16" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 11h16M8 16v2.5M16 16v2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>', 'ponto-placa__icone')),
       h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
@@ -370,7 +421,7 @@ const secoes = {
   },
 
   'ela-diz'(s) {
-    return h('section', { class: 'secao interludio ela-diz', 'data-tema': s.tema },
+    return h('section', { class: 'secao interludio ela-diz', 'data-tema': s.tema, 'data-indice': s.titulo },
       h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
       h('div', { class: 'ela-diz__lista', 'data-ela-diz': '' }, s.mensagens.map((m) => mensagem(m, 'msg--ini msg--fim'))),
       s.ele_mensagens && s.ele_mensagens.length && [
@@ -382,7 +433,7 @@ const secoes = {
 
   numeros(s) {
     const fmt = (v, d = 0) => v.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
-    return h('section', { class: 'secao interludio numeros', 'data-tema': s.tema },
+    return h('section', { class: 'secao interludio numeros', 'data-tema': s.tema, 'data-indice': s.titulo },
       h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
       s.nota && h('p', { class: 'numeros__nota manuscrito-curto' }, s.nota),
       h('div', { class: 'numeros__grade' },
@@ -409,7 +460,7 @@ const secoes = {
           h('span', { class: 'contador__num', 'data-u': u }, '0'), h('span', { class: 'contador__un' }, u)))),
       it.antes && h('p', { class: 'contador__antes', hidden: true }, it.antes));
     const n = s.namoro;
-    return h('section', { class: 'secao interludio contadores', 'data-tema': s.tema },
+    return h('section', { class: 'secao interludio contadores', 'data-tema': s.tema, 'data-indice': s.titulo },
       h('h2', { class: 'interludio__titulo', 'data-split': '' }, s.titulo),
       h('div', { class: 'contadores__lista' }, s.itens.map((it) => relogio(it, 'contador--um'))),
       h('div', { class: 'contadores__virada', 'data-virada': '' },
@@ -421,7 +472,7 @@ const secoes = {
   },
 
   carta(s) {
-    return h('section', { class: 'secao carta', 'data-tema': 'noite', 'data-seg': 'Carta' },
+    return h('section', { class: 'secao carta', 'data-tema': 'noite', 'data-seg': 'Carta', 'data-indice': UI.indice_carta },
       h('div', { class: 'carta__papel' },
         h('p', { class: 'carta__saudacao' }, s.saudacao),
         s.paragrafos.map((p) => h('p', { class: 'carta__p', 'data-linhas': '' }, p)),
@@ -431,17 +482,23 @@ const secoes = {
   final(s) {
     return h('section', { class: 'secao final', 'data-tema': s.tema },
       h('p', { class: 'final__despedida', 'data-revela-texto': '' }, s.despedida),
+      h('div', { class: 'final__acoes' },
+        CONFIG.whatsapp && h('a', { class: 'botao', 'data-revela-texto': '', target: '_blank', rel: 'noopener',
+          href: `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(UI.responder_texto || '')}` }, UI.responder),
+        h('button', { class: 'botao botao--leve', type: 'button', 'data-ler-de-novo': '', 'data-revela-texto': '' }, UI.ler_de_novo)),
       h('button', { class: 'pontinho', type: 'button', 'data-pontinho': '', 'aria-label': 'Abrir o segredo' }, h('span')),
       h('footer', { class: 'rodape' }, s.rodape));
   },
 };
 
 export function montarSite(dados) {
-  UI = (dados.config && dados.config.ui) || {};
+  CONFIG = dados.config || {};
+  UI = CONFIG.ui || {};
   const frag = document.createDocumentFragment();
   for (const s of dados.secoes) {
     const fn = secoes[s.tipo];
-    if (fn) frag.append(fn(s));
+    const el = fn && fn(s);
+    if (el) frag.append(el);
   }
   return frag;
 }

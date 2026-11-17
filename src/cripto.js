@@ -34,20 +34,20 @@ export async function entrarComSenha(senha) {
     { name: 'PBKDF2', hash: 'SHA-256', salt: deB64(cfg.s), iterations: cfg.i }, base, 256);
   chave = await importar(bruta);
   const site = await lerSite();
-  try { sessionStorage.setItem(CHAVE_SESSAO, b64(bruta)); } catch { /* aba anônima */ }
+  try { localStorage.setItem(CHAVE_SESSAO, b64(bruta)); } catch { /* aba anônima */ }
   return site;
 }
 
 /** Tenta reabrir com a chave guardada nesta aba. Devolve null se não houver. */
 export async function entrarComSessao() {
   let salva = null;
-  try { salva = sessionStorage.getItem(CHAVE_SESSAO); } catch { return null; }
+  try { salva = localStorage.getItem(CHAVE_SESSAO) || sessionStorage.getItem(CHAVE_SESSAO); } catch { return null; }
   if (!salva) return null;
   try {
     chave = await importar(deB64(salva));
     return await lerSite();
   } catch {
-    try { sessionStorage.removeItem(CHAVE_SESSAO); } catch { /* nada */ }
+    try { localStorage.removeItem(CHAVE_SESSAO); sessionStorage.removeItem(CHAVE_SESSAO); } catch { /* nada */ }
     return null;
   }
 }
