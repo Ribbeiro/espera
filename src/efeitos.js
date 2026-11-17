@@ -810,6 +810,10 @@ export function iniciarEfeitos({ barra, abaixar, trilha, ui = {} }) {
   mapa();
   // Os gatilhos foram criados por tipo, não na ordem da página: reordena antes de medir.
   ScrollTrigger.sort();
+  // A primeira medida ainda carrega o que foi guardado com a história escondida
+  // (telas presas com altura zero) e erra as posições depois delas. A segunda,
+  // já com tudo no lugar, acerta: sem ela um celular ficava por cima do vídeo.
+  ScrollTrigger.refresh();
   ScrollTrigger.refresh();
   if (document.fonts.status !== 'loaded') document.fonts.ready.then(() => ScrollTrigger.refresh());
 
