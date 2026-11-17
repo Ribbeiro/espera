@@ -27,6 +27,41 @@ const TEMAS = {
 
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 
+// Quebrar frases em palavras precisa da página visível: escondida, o SplitText
+// perde os espaços entre algumas palavras ("a pena" virava "apena"). Então tudo
+// é quebrado antes de esconder a história, e os efeitos só reaproveitam.
+const POR_LETRA = { type: 'words,chars', charsClass: 'letra', mask: 'words' };
+const POR_PALAVRA = { type: 'words', wordsClass: 'palavra' };
+function dividir(el, opcoes) {
+  if (!el.__dividido) el.__dividido = opcoes === POR_PALAVRA ? emPalavras(el) : SplitText.create(el, opcoes);
+  return el.__dividido;
+}
+// Frases em palavras, feito à mão: cada palavra num bloco e o espaço entre elas
+// preservado como texto de verdade (o SplitText às vezes engolia um espaço).
+function emPalavras(el) {
+  const texto = el.textContent.replace(/\s+/g, ' ').trim();
+  el.setAttribute('aria-label', texto);
+  const words = [];
+  el.replaceChildren(...texto.split(' ').flatMap((p, i) => {
+    const w = document.createElement('span');
+    w.className = 'palavra';
+    w.setAttribute('aria-hidden', 'true');
+    w.style.cssText = 'position:relative;display:inline-block';
+    w.textContent = p;
+    words.push(w);
+    return i ? [document.createTextNode(' '), w] : [w];
+  }));
+  return { words };
+}
+function dividirTudo() {
+  if (reduzido) return;
+  $$('[data-split]').forEach((el) => dividir(el, POR_LETRA));
+  $$('[data-respiro-frase], [data-celular-explode]').forEach((el) => dividir(el, POR_PALAVRA));
+  // Mede as palavras agora, com a página visível. Escondida, o GSAP tira cada uma
+  // do lugar pra medir e devolve antes da próxima, pulando o espaço entre elas.
+  gsap.set($$('.palavra, .letra'), { x: 0 });
+}
+
 // Pra quem só precisa "aparecer quando chega na tela": um observador leve do
 // navegador, em vez de um gatilho de rolagem que precisa ser recalculado.
 const vistos = new Map();
@@ -126,7 +161,7 @@ function titulos() {
       gsap.from(el, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: el, start: 'top 85%' } });
       return;
     }
-    const split = SplitText.create(el, { type: 'words,chars', charsClass: 'letra', mask: 'words' });
+    const split = dividir(el, POR_LETRA);
     gsap.set(split.chars, { yPercent: 110 });
     aoVer(el, () => gsap.to(split.chars, { yPercent: 0, duration: 0.9, ease: 'expo.out', stagger: 0.025 }));
   });
@@ -275,7 +310,7 @@ function celulares(trilha) {
       r.forEach((m) => {
         if (explode && m.classList.contains('msg--explode')) {
           // A mensagem toma a tela inteira antes de pousar no celular.
-          const palavras = SplitText.create(explode, { type: 'words', wordsClass: 'palavra' }).words;
+          const palavras = dividir(explode, POR_PALAVRA).words;
           gsap.set(explode, { opacity: 1 });
           tl.to(fone, { opacity: 0.08, scale: 0.94, duration: 0.4 })
             .fromTo(palco, { backgroundColor: 'rgba(122, 16, 41, 0)' }, { backgroundColor: 'rgba(122, 16, 41, 1)', duration: 0.4 }, '<')
@@ -342,7 +377,7 @@ function respiros(trilha) {
       // Primeira tela depois da senha: a frase se monta sozinha e some ao descer.
       const dica = r.querySelector('[data-respiro-dica]');
       if (reduzido) { gsap.from([frase, dica], { opacity: 0, duration: 0.15 }); return; }
-      const pal = SplitText.create(frase, { type: 'words', wordsClass: 'palavra' }).words;
+      const pal = dividir(frase, POR_PALAVRA).words;
       gsap.timeline({ delay: 0.5 })
         .from(pal, { opacity: 0, yPercent: 40, duration: 0.9, ease: 'expo.out', stagger: 0.18 })
         .from(dica, { opacity: 0, y: 8, duration: 0.3, ease: 'power2.out' }, '+=0.4');
@@ -354,7 +389,7 @@ function respiros(trilha) {
       ScrollTrigger.create({ trigger: r, start: 'top 60%', once: true, onEnter: () => trilha.final() });
     }
     if (reduzido) { gsap.from(frase, { opacity: 0, duration: 0.15, scrollTrigger: { trigger: r, start: 'top 70%' } }); return; }
-    const palavras = SplitText.create(frase, { type: 'words', wordsClass: 'palavra' }).words;
+    const palavras = dividir(frase, POR_PALAVRA).words;
     gsap.timeline({ scrollTrigger: { trigger: r, start: 'top 75%', end: 'bottom 25%', scrub: 0.8 } })
       .fromTo(palavras, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.5, stagger: 0.12, ease: 'power2.out' })
       .to({}, { duration: 1 })
@@ -775,6 +810,7 @@ export function iniciarEfeitos({ barra, abaixar, trilha, ui = {} }) {
   UI_DICA = ui.continua || '';
   // Cada gatilho novo mede a página inteira na hora em que nasce. Com a história
   // escondida essas medidas custam quase nada; depois mede tudo uma vez só.
+  dividirTudo();
   const historia = document.getElementById('historia');
   historia.style.display = 'none';
   fundo();
